@@ -1,150 +1,71 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<html>
+<!doctype html>
+<html lang="zh-CN">
 <head>
-    <title>聊天室</title>
-    <script src="js/jquery-1.12.3.min.js"></script>
-    <link rel="stylesheet" href="//cdn.bootcss.com/bootstrap/3.3.5/css/bootstrap.min.css">
-    <script src="//cdn.bootcss.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HowBlog 公共聊天室</title>
     <style>
-        body {
-            margin-top: 5px;
-        }
+        body { max-width: 760px; margin: 32px auto; padding: 0 16px; font-family: system-ui, sans-serif; color: #17202a; background: #eef3f7; }
+        section { padding: 18px; background: #fff; border: 1px solid #dce4ea; border-radius: 8px; }
+        h1 { margin-top: 0; }
+        #status { color: #52606d; }
+        #log { height: 55vh; overflow-y: auto; padding: 12px; background: #f7f9fb; border: 1px solid #e1e8ee; }
+        #bar { display: grid; grid-template-columns: 1fr 90px; gap: 8px; margin-top: 10px; }
+        input, button { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #c7d2dc; border-radius: 5px; font: inherit; }
+        button { color: #fff; background: #1769aa; border-color: #1769aa; cursor: pointer; }
+        .system { color: #7b8794; font-size: 13px; margin-bottom: 8px; }
+        .message { margin-bottom: 8px; }
     </style>
 </head>
 <body>
-<div class="container">
-    <div class="row">
-        <div class="col-md-3">
-            <div class="panel panel-primary">
-                <div class="panel-heading">
-                    <h3 class="panel-title">当前登录用户</h3>
-                </div>
-                <div class="panel-body">
-                    <div class="list-group">
-                        <a href="#" class="list-group-item">你好，${sessionScope.username}</a>
-                        <a href="logout" class="list-group-item">退出</a>
-                    </div>
-                </div>
-            </div>
-            <div class="panel panel-primary" id="online">
-                <div class="panel-heading">
-                    <h3 class="panel-title">当前在线的其他用户</h3>
-                </div>
-                <div class="panel-body">
-                    <div class="list-group" id="users">
-                    </div>
-                </div>
-            </div>
-            <div class="panel panel-primary">
-                <div class="panel-heading">
-                    <h3 class="panel-title">群发系统广播</h3>
-                </div>
-                <div class="panel-body">
-                    <input type="text" class="form-control" id="msg"/><br>
-                    <button id="broadcast" type="button" class="btn btn-primary">发送</button>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-9">
-            <div class="panel panel-primary">
-                <div class="panel-heading">
-                    <h3 class="panel-title" id="talktitle"></h3>
-                </div>
-                <div class="panel-body">
-                    <div class="well" id="log-container" style="height:400px;overflow-y:scroll">
-
-                    </div>
-                    <input type="text" id="myinfo" class="form-control col-md-12"/> <br>
-                    <button id="send" type="button" class="btn btn-primary">发送</button>
-                </div>
-            </div>
-        </div>
+<section>
+    <h1>HowBlog 公共聊天室</h1>
+    <p id="status">正在等待连接</p>
+    <div id="log" aria-live="polite"></div>
+    <div id="bar">
+        <input id="content" disabled placeholder="连接后输入消息">
+        <button id="send" disabled>发送</button>
     </div>
-</div>
+</section>
 <script>
-    $(document).ready(function () {
-        // 指定websocket路径
-        var websocket;
-        if ('WebSocket' in window) {
-            websocket = new WebSocket("ws://localhost:8080/Spring-websocket/ws?uid=" +${sessionScope.uid});
-        } else if ('MozWebSocket' in window) {
-            websocket = new MozWebSocket("ws://localhost:8080/Spring-websocket/ws" +${sessionScope.uid});
-        } else {
-            websocket = new SockJS("http://localhost:8080/Spring-websocket/ws/sockjs" +${sessionScope.uid});
-        }
-        //var websocket = new WebSocket('ws://localhost:8080/Spring-websocket/ws');
-        websocket.onmessage = function (event) {
-            var data = JSON.parse(event.data);
-            if (data.from > 0 || data.from == -1) {//用户或者群消息
-                // 接收服务端的实时消息并添加到HTML页面中
-                $("#log-container").append("<div class='bg-info'><label class='text-danger'>" + data.fromName + "&nbsp;" + data.date + "</label><div class='text-success'>" + data.text + "</div></div><br>");
-                // 滚动条滚动到最低部
-                scrollToBottom();
-            } else if (data.from == 0) {//上线消息
-                if (data.text != "${sessionScope.username}") {
-                    $("#users").append('<a href="#" onclick="talk(this)" class="list-group-item">' + data.text + '</a>');
-                    //alert(data.text+"上线了");
-                }
-            } else if (data.from == -2) {//下线消息
-                if (data.text != "${sessionScope.username}") {
-                    $("#users > a").remove(":contains('" + data.text + "')");
-                    //alert(data.text+"下线了");
-                }
-            }
-        };
-        websocket.onopen = function (event) {
-            debugger
-            //alert('连接成功！');
-        };
-        websocket.onclose = function (event) {
-            debugger
-            //alert('连接关闭！');
-        };
-        websocket.onerror = function (event) {
-            //alert('连接出错！');
-        };
-        $.post("onlineusers", function (data) {
-            for (var i = 0; i < data.length; i++)
-                $("#users").append('<a href="#" onclick="talk(this)" class="list-group-item">' + data[i] + '</a>');
-        });
+    const params = new URLSearchParams(location.search);
+    const user = params.get('user') || `guest-${Math.random().toString(36).slice(2, 7)}`;
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${location.host}/im?user=${encodeURIComponent(user)}`);
+    const log = document.getElementById('log');
+    const content = document.getElementById('content');
+    const sendButton = document.getElementById('send');
 
-        $("#broadcast").click(function () {
-            $.post("broadcast", {"text": $("#msg").val()});
-        });
-
-        $("#send").click(function () {
-            $.post("getuid", {"username": $("body").data("to")}, function (d) {
-                var v = $("#myinfo").val();
-
-                if (v == "") {
-                    return;
-                } else {
-                    var data = {};
-                    data["from"] = "${sessionScope.uid}";
-                    data["fromName"] = "${sessionScope.username}";
-                    data["to"] = d.uid;
-                    data["text"] = v;
-                    websocket.send(JSON.stringify(data));
-                    $("#log-container").append("<div class='bg-success'><label class='text-info'>我&nbsp;" + new Date() + "</label><div class='text-info'>" + v + "</div></div><br>");
-                    scrollToBottom();
-                    $("#myinfo").val("");
-                }
-            });
-
-        });
-
-    });
-
-    function talk(a) {
-        $("#talktitle").text("与" + a.innerHTML + "的聊天");
-        $("body").data("to", a.innerHTML);
+    function append(text, className) {
+        const line = document.createElement('div');
+        line.className = className || 'message';
+        line.textContent = text;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
     }
 
-    function scrollToBottom() {
-        var div = document.getElementById('log-container');
-        div.scrollTop = div.scrollHeight;
+    socket.onopen = () => {
+        document.getElementById('status').textContent = `已连接：${user}`;
+        content.disabled = false;
+        sendButton.disabled = false;
+        socket.send(JSON.stringify({ type: 'join', room: 'lobby' }));
+    };
+    socket.onmessage = ({ data }) => {
+        const event = JSON.parse(data);
+        if (event.type === 'message') append(`${event.from}：${event.content}`);
+        if (event.type === 'presence') append(`${event.user} ${event.event === 'online' ? '加入聊天室' : '离开聊天室'}`, 'system');
+    };
+    socket.onclose = () => { document.getElementById('status').textContent = '连接已关闭'; };
+    socket.onerror = () => append('无法连接到 IM 服务，请先启动 how_user', 'system');
+
+    function send() {
+        const value = content.value.trim();
+        if (!value || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({ type: 'message', room: 'lobby', content: value }));
+        content.value = '';
     }
+    sendButton.addEventListener('click', send);
+    content.addEventListener('keydown', (event) => { if (event.key === 'Enter') send(); });
 </script>
-
 </body>
 </html>
