@@ -19,7 +19,7 @@ HowBlog-2.0-Java/
 | --- | --- | --- | --- |
 | `how_user` | `com.liushao.user.UserApplication` | `9008` | MySQL `how_user` |
 | `how_base` | `com.liushao.base.BaseApplication` | `9001` | MySQL `how_base` |
-| `how_article` | `com.liushao.article.ArticleApplication` | `9004` | MySQL `how_article`、MongoDB、Redis |
+| `how_article` | `com.liushao.article.ArticleApplication` | `9004` | MySQL `how_article`、Redis |
 
 ## 技术栈
 
@@ -28,7 +28,7 @@ HowBlog-2.0-Java/
 - Spring MVC
 - MyBatis-Plus 2.2.0
 - MySQL Connector/J 8.0.33
-- MongoDB，用于评论数据
+- MySQL，用于文章和评论数据
 - Redis，用于评论点赞记录
 - Maven 多模块构建
 
@@ -39,7 +39,6 @@ HowBlog-2.0-Java/
 - JDK 21，并正确设置 `JAVA_HOME`
 - Maven 3.9 或更高版本
 - MySQL 8.x
-- MongoDB
 - Redis
 
 当前工程没有提交 Maven Wrapper。如果系统没有配置 `mvn` 命令，可以直接使用本机 Maven，或在项目根目录执行 Maven Wrapper 生成命令后再使用 Wrapper。
@@ -55,7 +54,6 @@ HowBlog-2.0-Java/
 当前配置中的数据库地址、用户名和密码是已有环境配置，包含远程主机地址和明文密码。启动自己的环境前，请务必修改以下配置，不要直接用于生产环境：
 
 - MySQL 地址、端口、数据库名、用户名和密码
-- MongoDB 地址和数据库名
 - Redis 地址和端口
 - 各服务的 HTTP 端口
 
@@ -67,14 +65,13 @@ how_base
 how_article
 ```
 
-文章服务还需要：
+文章服务还需要 Redis：
 
 ```text
-MongoDB: commentdb
-Redis: 6379
+Redis: 6379，逻辑数据库 3
 ```
 
-项目没有提供 SQL 建表脚本。首次运行前，需要根据 `how_user`、`how_base` 和 `how_article` 下的实体类及 DAO 自行准备数据库表和字段。
+首次运行前，执行 [docs/mysql-init.sql](docs/mysql-init.sql) 创建三个 MySQL 数据库及所需业务表。
 
 ## 编译项目
 
@@ -199,4 +196,4 @@ WebSocket 地址为 `ws://localhost:9008/im?user=alice`，HTTPS 环境自动使�
 mvn clean -DskipTests compile
 ```
 
-结果为 `BUILD SUCCESS`。项目当前未提供完整的自动化测试用例，编译通过不代表外部 MySQL、MongoDB 和 Redis 配置已经可用。
+结果为 `BUILD SUCCESS`。项目当前未提供完整的自动化测试用例，编译通过不代表外部 MySQL 和 Redis 配置已经可用。

@@ -7,10 +7,10 @@ spring:
     name: how-base
   #数据源配置
   datasource:
-    driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://101.201.142.43:3306/how_base?characterEncoding=utf-8&useSSL=false
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.20.5:3306/how_base?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: "ssyhsup"
 
 # Mybatis-Plus 配置
 mybatis-plus:

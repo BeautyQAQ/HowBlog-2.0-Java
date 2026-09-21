@@ -1,6 +1,8 @@
 package com.liushao.article.pojo;
 
-import org.springframework.data.annotation.Id;
+import com.baomidou.mybatisplus.annotations.TableId;
+import com.baomidou.mybatisplus.annotations.TableName;
+import com.baomidou.mybatisplus.enums.IdType;
 
 import java.io.Serializable;
 import java.util.Date;
@@ -10,8 +12,9 @@ import java.util.Date;
  * 评论
  * @author huangshen
  */
+@TableName("tb_comment")
 public class Comment implements Serializable {
-    @Id
+    @TableId(value = "id", type = IdType.INPUT)
     private String _id;
     private String articleid;
     private String content;
