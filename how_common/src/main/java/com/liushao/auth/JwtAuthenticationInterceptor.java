@@ -17,10 +17,12 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
 
     private final JwtTokenService jwtTokenService;
     private final ObjectMapper objectMapper;
+    private final SessionVerifier sessions;
 
-    public JwtAuthenticationInterceptor(JwtTokenService jwtTokenService, ObjectMapper objectMapper) {
+    public JwtAuthenticationInterceptor(JwtTokenService jwtTokenService, ObjectMapper objectMapper, SessionVerifier sessions) {
         this.jwtTokenService = jwtTokenService;
         this.objectMapper = objectMapper;
+        this.sessions = sessions;
     }
 
     @Override
@@ -31,6 +33,10 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
     ) throws IOException {
         CurrentUserContext.clear();
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+        if (handler instanceof HandlerMethod method
+                && method.hasMethodAnnotation(RefreshCredentialEndpoint.class)) {
             return true;
         }
 
@@ -45,6 +51,10 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
             } catch (RuntimeException exception) {
                 return reject(response);
             }
+            if (user.getSessionId() == null || !user.getSessionId().matches("[0-9a-f]{64}")) {
+                return reject(response);
+            }
+            if (!sessions.isActive(user.getSessionId(), user.getUserId())) return reject(response);
         }
 
         if (requiresAuthentication(handler) && user == null) {

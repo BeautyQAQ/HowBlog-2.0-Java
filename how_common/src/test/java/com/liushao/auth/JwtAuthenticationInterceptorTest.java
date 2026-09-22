@@ -20,11 +20,14 @@ class JwtAuthenticationInterceptorTest {
 
     private JwtTokenService jwtTokenService;
     private JwtAuthenticationInterceptor interceptor;
+    private SessionVerifier sessions;
 
     @BeforeEach
     void setUp() {
         jwtTokenService = new JwtTokenService(SECRET, Duration.ofMinutes(30));
-        interceptor = new JwtAuthenticationInterceptor(jwtTokenService, new ObjectMapper());
+        sessions = org.mockito.Mockito.mock(SessionVerifier.class);
+        org.mockito.Mockito.when(sessions.isActive("a".repeat(64), "10001")).thenReturn(true);
+        interceptor = new JwtAuthenticationInterceptor(jwtTokenService, new ObjectMapper(), sessions);
     }
 
     @AfterEach
@@ -49,7 +52,7 @@ class JwtAuthenticationInterceptorTest {
 
     @Test
     void acceptsValidTokenAndClearsContextAfterRequest() throws Exception {
-        String token = jwtTokenService.issueToken("10001", "13800000000");
+        String token = sessionToken();
         MockHttpServletRequest request = request("Bearer " + token);
         MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -63,7 +66,7 @@ class JwtAuthenticationInterceptorTest {
 
     @Test
     void acceptsBearerSchemeWithoutRequiringSpecificCase() throws Exception {
-        String token = jwtTokenService.issueToken("10001", "13800000000");
+        String token = sessionToken();
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         boolean accepted = interceptor.preHandle(
@@ -113,6 +116,35 @@ class JwtAuthenticationInterceptorTest {
         return request;
     }
 
+    private String sessionToken() {
+        return jwtTokenService.issueToken("10001", "13800000000", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));
+    }
+
+    @Test
+    void rejectsLegacyAndRevokedSessions() throws Exception {
+        assertFalse(interceptor.preHandle(request("Bearer " + jwtTokenService.issueToken("10001", "mobile")),
+                new MockHttpServletResponse(), handler("protectedEndpoint")));
+        org.mockito.Mockito.when(sessions.isActive("a".repeat(64), "10001")).thenReturn(false);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        assertFalse(interceptor.preHandle(request("Bearer " + sessionToken()), response, handler("protectedEndpoint")));
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
+    void storageFailureDoesNotSetCurrentUser() throws Exception {
+        org.mockito.Mockito.when(sessions.isActive("a".repeat(64), "10001"))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("unavailable"));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> interceptor.preHandle(request("Bearer " + sessionToken()), new MockHttpServletResponse(), handler("protectedEndpoint")));
+        assertTrue(CurrentUserContext.get().isEmpty());
+    }
+
+    @Test
+    void refreshEndpointIgnoresExpiredAccessHeader() throws Exception {
+        assertTrue(interceptor.preHandle(request("Bearer expired"), new MockHttpServletResponse(), handler("refreshEndpoint")));
+        org.mockito.Mockito.verifyNoInteractions(sessions);
+    }
+
     private HandlerMethod handler(String methodName) throws Exception {
         Method method = TestEndpoints.class.getMethod(methodName);
         return new HandlerMethod(new TestEndpoints(), method);
@@ -129,6 +161,10 @@ class JwtAuthenticationInterceptorTest {
         }
 
         public void publicEndpoint() {
+        }
+
+        @RefreshCredentialEndpoint
+        public void refreshEndpoint() {
         }
     }
 }

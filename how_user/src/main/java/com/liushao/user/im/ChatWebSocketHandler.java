@@ -2,6 +2,9 @@ package com.liushao.user.im;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.liushao.auth.AuthenticatedUser;
+import com.liushao.auth.SessionVerifier;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -17,21 +20,25 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
+    private final SessionVerifier verifier;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
-    public ChatWebSocketHandler(ObjectMapper objectMapper) {
+    public ChatWebSocketHandler(ObjectMapper objectMapper, SessionVerifier verifier) {
         this.objectMapper = objectMapper;
+        this.verifier = verifier;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
+        if (!validate(session)) return;
         String username = currentUser(session);
         if (username == null || username.isBlank()) {
             session.close(CloseStatus.POLICY_VIOLATION);
             return;
         }
 
-        sessions.put(username, session);
+        WebSocketSession previous = sessions.put(username, session);
+        if (previous != null && previous != session && previous.isOpen()) previous.close(CloseStatus.NORMAL);
         send(session, Map.of("type", "ready", "user", username));
         for (String onlineUser : sessions.keySet()) {
             if (!onlineUser.equals(username)) {
@@ -43,6 +50,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+        if (!validate(session)) return;
         JsonNode request = objectMapper.readTree(message.getPayload());
         String type = request.path("type").asText("message");
         String username = currentUser(session);
@@ -126,9 +134,38 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void send(WebSocketSession session, Object message) throws IOException {
-        if (session.isOpen()) {
+        if (validate(session)) {
+            synchronized (session) {
             session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
+            }
         }
+    }
+
+    @Scheduled(fixedDelay = 30000)
+    public void closeInactiveSessions() {
+        for (WebSocketSession session : sessions.values()) {
+            try {
+                validate(session);
+            } catch (IOException ignored) {
+                sessions.values().remove(session);
+            }
+        }
+    }
+
+    private boolean validate(WebSocketSession session) throws IOException {
+        if (!session.isOpen()) return false;
+        CloseStatus reason = CloseStatus.POLICY_VIOLATION;
+        try {
+            Object stored = session.getAttributes().get("identity");
+            if (stored instanceof AuthenticatedUser user && user.getExpiresAt().isAfter(Instant.now())
+                    && verifier.isActive(user.getSessionId(), user.getUserId())) return true;
+        } catch (RuntimeException exception) {
+            reason = CloseStatus.SERVER_ERROR;
+        }
+        String username = currentUser(session);
+        if (username != null) sessions.remove(username, session);
+        session.close(reason);
+        return false;
     }
 
     private String currentUser(WebSocketSession session) {

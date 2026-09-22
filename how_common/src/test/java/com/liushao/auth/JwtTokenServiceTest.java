@@ -43,4 +43,16 @@ class JwtTokenServiceTest {
                 () -> new JwtTokenService("too-short", Duration.ofMinutes(30))
         );
     }
+
+    @Test
+    void boundsAccessExpiryBySessionAndPreservesSessionId() {
+        JwtTokenService service = new JwtTokenService(SECRET, Duration.ofMinutes(30));
+        java.time.Instant sessionExpiry = java.time.Instant.now().plusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        String token = service.issueToken("10001", "test", "a".repeat(64), sessionExpiry);
+        AuthenticatedUser user = service.parseToken(token);
+        assertEquals("a".repeat(64), user.getSessionId());
+        assertEquals(sessionExpiry, user.getExpiresAt());
+        assertThrows(IllegalArgumentException.class,
+                () -> service.issueToken("10001", "test", "a".repeat(64), java.time.Instant.EPOCH));
+    }
 }

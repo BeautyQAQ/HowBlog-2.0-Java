@@ -8,6 +8,13 @@ public class LoginResponse {
     private String nickname;
     private String token;
     private String tokenType;
+    private String refreshToken;
+    private long refreshExpiresIn;
+
+    public String getRefreshToken() { return refreshToken; }
+    public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
+    public long getRefreshExpiresIn() { return refreshExpiresIn; }
+    public void setRefreshExpiresIn(long refreshExpiresIn) { this.refreshExpiresIn = refreshExpiresIn; }
 
     private LoginResponse() {
     }

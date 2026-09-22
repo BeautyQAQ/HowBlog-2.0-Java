@@ -1,15 +1,17 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "4.0.0",
-  "revision": 6,
+  "contractVersion": "5.0.0",
+  "revision": 7,
   "updatedAt": "2026-09-22",
-  "latestChangeId": "API-20260922-006",
+  "latestChangeId": "API-20260922-007",
   "latestChangeType": "protocol",
   "breaking": true,
   "requiresFrontendAction": true,
   "changedAreas": [
-    "label-rest-admin-authorization",
-    "rest-forbidden-response"
+    "user-login-session",
+    "user-refresh-logout",
+    "all-rest-session-authentication",
+    "websocket-session-revocation"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

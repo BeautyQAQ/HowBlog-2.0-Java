@@ -11,7 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 
-public final class JwtTokenService {
+public class JwtTokenService {
     private static final int MINIMUM_SECRET_BYTES = 32;
     private final SecretKey signingKey;
     private final Duration accessTokenTtl;
@@ -28,15 +28,23 @@ public final class JwtTokenService {
     }
 
     public String issueToken(String userId, String mobile) {
+        return issueToken(userId, mobile, null, Instant.now().plus(accessTokenTtl));
+    }
+
+    public String issueToken(String userId, String mobile, String sessionId, Instant sessionExpiresAt) {
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("JWT subject must not be blank");
         }
         Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plus(accessTokenTtl);
+        if (sessionExpiresAt.isBefore(expiresAt)) expiresAt = sessionExpiresAt;
+        if (!expiresAt.isAfter(issuedAt)) throw new IllegalArgumentException("Session expired");
         return Jwts.builder()
                 .setSubject(userId)
                 .claim("mobile", mobile)
+                .claim("sid", sessionId)
                 .setIssuedAt(Date.from(issuedAt))
-                .setExpiration(Date.from(issuedAt.plus(accessTokenTtl)))
+                .setExpiration(Date.from(expiresAt))
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
     }
@@ -54,7 +62,9 @@ public final class JwtTokenService {
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("JWT subject must not be blank");
         }
-        return new AuthenticatedUser(userId, claims.get("mobile", String.class));
+        if (claims.getExpiration() == null) throw new IllegalArgumentException("JWT expiry missing");
+        return new AuthenticatedUser(userId, claims.get("mobile", String.class),
+            claims.get("sid", String.class), claims.getExpiration().toInstant());
     }
 
     public long getAccessTokenTtlSeconds() {

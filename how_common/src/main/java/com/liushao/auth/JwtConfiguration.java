@@ -19,10 +19,16 @@ public class JwtConfiguration {
     }
 
     @Bean
+    public SessionVerifier sessionVerifier(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        return new SessionVerifier(jdbc);
+    }
+
+    @Bean
     public JwtAuthenticationInterceptor jwtAuthenticationInterceptor(
             JwtTokenService jwtTokenService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            SessionVerifier sessions
     ) {
-        return new JwtAuthenticationInterceptor(jwtTokenService, objectMapper);
+        return new JwtAuthenticationInterceptor(jwtTokenService, objectMapper, sessions);
     }
 }

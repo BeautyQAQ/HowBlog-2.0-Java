@@ -37,6 +37,7 @@ class LabelControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private JwtTokenService tokens;
     @MockBean private LabelDao labelDao;
+        @MockBean private com.liushao.auth.SessionVerifier sessions;
         @MockBean private UserRoleDao userRoleDao;
 
     @ParameterizedTest
@@ -113,7 +114,8 @@ class LabelControllerTest {
     }
 
     private String authorization() {
-        return "Bearer " + tokens.issueToken("author", "test-user");
+                when(sessions.isActive("a".repeat(64), "author")).thenReturn(true);
+                return "Bearer " + tokens.issueToken("author", "test-user", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));
     }
 
         @ParameterizedTest
@@ -160,5 +162,15 @@ class LabelControllerTest {
                 mvc.perform(get("/label")).andExpect(status().isOk());
                 mvc.perform(get("/label/missing")).andExpect(status().isNotFound());
                 verifyNoInteractions(userRoleDao);
+        }
+
+        @Test
+        void revokedSessionCannotReachAdministratorCheck() throws Exception {
+                String token = authorization();
+                when(sessions.isActive("a".repeat(64), "author")).thenReturn(false);
+                mvc.perform(post("/label").header("Authorization", token).contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"labelname\":\"Java\"}"))
+                                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(20003));
+                verifyNoInteractions(userRoleDao, labelDao);
         }
 }

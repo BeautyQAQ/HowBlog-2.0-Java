@@ -45,11 +45,15 @@ class UserServiceTest {
                 "01234567890123456789012345678901",
                 Duration.ofMinutes(30)
         );
-        userService = new UserService(userDao, passwordEncoder, jwtTokenService);
+        AuthSessionService sessions = new AuthSessionService(
+            org.mockito.Mockito.mock(com.liushao.user.dao.AuthSessionDao.class),
+            org.mockito.Mockito.mock(com.liushao.user.dao.AuthRefreshTokenDao.class), userDao);
+        userService = new UserService(userDao, passwordEncoder, jwtTokenService, sessions);
     }
 
     @Test
     void loginUsesMobileOnlyUpgradesLegacyPasswordAndReturnsNoPassword() throws Exception {
+        when(userDao.existsById("10001")).thenReturn(true);
         User user = userWithPassword(PASSWORD);
         when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(user));
 
@@ -59,7 +63,8 @@ class UserServiceTest {
         assertEquals(MOBILE, response.getMobile());
         assertEquals("Alice", response.getNickname());
         assertEquals("Bearer", response.getTokenType());
-        assertEquals(1800, response.getExpiresIn());
+        assertTrue(response.getExpiresIn() > 0 && response.getExpiresIn() <= 1800);
+        assertTrue(response.getRefreshToken().matches("[0-9a-f]{64}"));
         assertFalse(response.getToken().isBlank());
         assertTrue(passwordEncoder.matches(PASSWORD, user.getPassword()));
         assertFalse(objectMapper.writeValueAsString(response).contains("password"));
@@ -69,6 +74,7 @@ class UserServiceTest {
 
     @Test
     void loginWithBcryptPasswordDoesNotWriteTheUserAgain() {
+        when(userDao.existsById("10001")).thenReturn(true);
         User user = userWithPassword(passwordEncoder.encode(PASSWORD));
         when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(user));
 

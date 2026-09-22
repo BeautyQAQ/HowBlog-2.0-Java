@@ -51,6 +51,7 @@ class ArticleControllerTest {
     @MockBean private ArticleDao articleDao;
     @MockBean private CommentDao commentDao;
     @MockBean private RedisTemplate redisTemplate;
+        @MockBean private com.liushao.auth.SessionVerifier sessions;
 
     @ParameterizedTest
     @CsvSource({"POST,/article", "PUT,/article/one", "DELETE,/article/one",
@@ -203,6 +204,18 @@ class ArticleControllerTest {
     }
 
     private String authorization() {
-        return "Bearer " + tokens.issueToken("author", "test-user");
+                when(sessions.isActive("a".repeat(64), "author")).thenReturn(true);
+                return "Bearer " + tokens.issueToken("author", "test-user", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));
     }
+
+        @Test
+        void revokedSessionCannotWriteArticleOrComment() throws Exception {
+                String token = authorization();
+                when(sessions.isActive("a".repeat(64), "author")).thenReturn(false);
+                for (String path : List.of("/article", "/comment")) {
+                        mvc.perform(post(path).header("Authorization", token).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                                        .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value(20003));
+                }
+                verifyNoInteractions(articleDao, commentDao, redisTemplate);
+        }
 }

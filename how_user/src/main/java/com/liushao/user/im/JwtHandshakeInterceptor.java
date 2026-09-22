@@ -2,6 +2,7 @@ package com.liushao.user.im;
 
 import com.liushao.auth.AuthenticatedUser;
 import com.liushao.auth.JwtTokenService;
+import com.liushao.auth.SessionVerifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
@@ -16,9 +17,11 @@ import java.util.Map;
 @Component
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     private final JwtTokenService jwtTokenService;
+    private final SessionVerifier sessions;
 
-    public JwtHandshakeInterceptor(JwtTokenService jwtTokenService) {
+    public JwtHandshakeInterceptor(JwtTokenService jwtTokenService, SessionVerifier sessions) {
         this.jwtTokenService = jwtTokenService;
+        this.sessions = sessions;
     }
 
     @Override
@@ -28,15 +31,19 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             WebSocketHandler webSocketHandler,
             Map<String, Object> attributes
     ) {
-        String token = queryParameter(request, "token");
-        if (token == null || token.isBlank()) {
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return false;
-        }
         try {
+            String token = queryParameter(request, "token");
             AuthenticatedUser user = jwtTokenService.parseToken(token);
+            if (!sessions.isActive(user.getSessionId(), user.getUserId())) {
+                response.setStatusCode(HttpStatus.UNAUTHORIZED);
+                return false;
+            }
             attributes.put("user", user.getUserId());
+            attributes.put("identity", user);
             return true;
+        } catch (org.springframework.dao.DataAccessException exception) {
+            response.setStatusCode(HttpStatus.SERVICE_UNAVAILABLE);
+            return false;
         } catch (RuntimeException exception) {
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;

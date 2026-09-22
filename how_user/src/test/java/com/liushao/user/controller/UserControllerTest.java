@@ -26,11 +26,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(controllers = UserController.class, properties = {
         "how.auth.jwt.secret=test-only-signing-key-not-for-production", "logging.level.root=WARN"
 })
-@Import({UserService.class, PasswordConfig.class})
+@Import({UserService.class, PasswordConfig.class, com.liushao.user.service.AuthSessionService.class})
 class UserControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private PasswordEncoder passwordEncoder;
     @MockBean private UserDao userDao;
+    @MockBean private com.liushao.user.dao.AuthSessionDao sessions;
+    @MockBean private com.liushao.user.dao.AuthRefreshTokenDao refreshTokens;
+    @MockBean private com.liushao.auth.SessionVerifier verifier;
 
     @ParameterizedTest
     @ValueSource(strings = {"{}", "{\"mobile\":\"test-user\"}", "{\"mobile\":\" \",\"password\":\"test-password\"}"})
@@ -57,6 +60,7 @@ class UserControllerTest {
         user.setMobile("test-user");
         user.setPassword(passwordEncoder.encode("test-password"));
         when(userDao.findAllByMobile("test-user")).thenReturn(List.of(user));
+        when(userDao.existsById("author")).thenReturn(true);
         mvc.perform(post("/user/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mobile\":\"test-user\",\"password\":\"test-password\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true))

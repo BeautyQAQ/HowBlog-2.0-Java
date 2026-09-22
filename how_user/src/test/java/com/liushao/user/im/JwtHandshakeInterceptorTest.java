@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class JwtHandshakeInterceptorTest {
     private JwtHandshakeInterceptor interceptor;
     private JwtTokenService jwtTokenService;
+    private com.liushao.auth.SessionVerifier sessions;
 
     @BeforeEach
     void setUp() {
@@ -27,12 +28,14 @@ class JwtHandshakeInterceptorTest {
                 "01234567890123456789012345678901",
                 Duration.ofMinutes(30)
         );
-        interceptor = new JwtHandshakeInterceptor(jwtTokenService);
+        sessions = org.mockito.Mockito.mock(com.liushao.auth.SessionVerifier.class);
+        org.mockito.Mockito.when(sessions.isActive("a".repeat(64), "10001")).thenReturn(true);
+        interceptor = new JwtHandshakeInterceptor(jwtTokenService, sessions);
     }
 
     @Test
     void acceptsAValidTokenAndSetsTheAuthenticatedUser() {
-        String token = jwtTokenService.issueToken("10001", "13800000000");
+        String token = jwtTokenService.issueToken("10001", "13800000000", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));
         MockHttpServletRequest request = requestForToken(token);
         MockHttpServletResponse response = new MockHttpServletResponse();
         Map<String, Object> attributes = new HashMap<>();
@@ -79,5 +82,31 @@ class JwtHandshakeInterceptorTest {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/im");
         request.setQueryString("token=" + token);
         return request;
+    }
+
+    @Test
+    void rejectsRevokedSessionAndStorageFailure() {
+        String token = jwtTokenService.issueToken("10001", "test", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));
+        org.mockito.Mockito.when(sessions.isActive("a".repeat(64), "10001")).thenReturn(false);
+        MockHttpServletResponse revoked = new MockHttpServletResponse();
+        assertFalse(interceptor.beforeHandshake(new ServletServerHttpRequest(requestForToken(token)),
+                new ServletServerHttpResponse(revoked), new TextWebSocketHandler(), new HashMap<>()));
+        assertEquals(401, revoked.getStatus());
+        org.mockito.Mockito.when(sessions.isActive("a".repeat(64), "10001"))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("internal connection"));
+        MockHttpServletResponse unavailable = new MockHttpServletResponse();
+        assertFalse(interceptor.beforeHandshake(new ServletServerHttpRequest(requestForToken(token)),
+                new ServletServerHttpResponse(unavailable), new TextWebSocketHandler(), new HashMap<>()));
+        assertEquals(503, unavailable.getStatus());
+    }
+
+    @Test
+    void rejectsLegacyIdentityAndMalformedUrlEncoding() {
+        for (String token : new String[] {jwtTokenService.issueToken("10001", "test"), "%ZZ"}) {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            assertFalse(interceptor.beforeHandshake(new ServletServerHttpRequest(requestForToken(token)),
+                    new ServletServerHttpResponse(response), new TextWebSocketHandler(), new HashMap<>()));
+            assertEquals(401, response.getStatus());
+        }
     }
 }
