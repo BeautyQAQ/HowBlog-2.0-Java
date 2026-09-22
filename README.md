@@ -43,6 +43,8 @@ HowBlog-2.0-Java/
 
 当前工程没有提交 Maven Wrapper。如果系统没有配置 `mvn` 命令，可以直接使用本机 Maven，或在项目根目录执行 Maven Wrapper 生成命令后再使用 Wrapper。
 
+启动服务前必须设置 JWT 密钥环境变量 `HOW_AUTH_JWT_SECRET`，值至少包含 32 个 UTF-8 字节；可选使用 `HOW_AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS` 设置访问令牌有效期，默认 1800 秒。不要把密钥写入仓库或提交到配置文件。
+
 ## 配置数据库和中间件
 
 各服务的配置文件位于：
@@ -127,7 +129,7 @@ mvn -pl how_user spring-boot:run
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/user/login` | 用户登录，请求体为用户 JSON |
+| `POST` | `/user/login` | 用户登录，成功返回 Bearer JWT |
 
 ### 基础服务 `http://localhost:9001`
 
@@ -135,9 +137,9 @@ mvn -pl how_user spring-boot:run
 | --- | --- | --- |
 | `GET` | `/label` | 查询全部标签 |
 | `GET` | `/label/{id}` | 查询单个标签 |
-| `POST` | `/label` | 新增标签 |
-| `PUT` | `/label/{id}` | 修改标签 |
-| `DELETE` | `/label/{id}` | 删除标签 |
+| `POST` | `/label` | 新增标签，需要 Bearer JWT |
+| `PUT` | `/label/{id}` | 修改标签，需要 Bearer JWT |
+| `DELETE` | `/label/{id}` | 删除标签，需要 Bearer JWT |
 
 ### 文章服务 `http://localhost:9004`
 
@@ -145,17 +147,17 @@ mvn -pl how_user spring-boot:run
 | --- | --- | --- |
 | `GET` | `/article` | 查询全部文章 |
 | `GET` | `/article/{articleId}` | 查询单篇文章 |
-| `POST` | `/article` | 新增文章 |
-| `PUT` | `/article/{articleId}` | 修改文章 |
-| `DELETE` | `/article/{articleId}` | 删除文章 |
+| `POST` | `/article` | 新增文章，需要 Bearer JWT |
+| `PUT` | `/article/{articleId}` | 修改文章，需要作者 Bearer JWT |
+| `DELETE` | `/article/{articleId}` | 删除文章，需要作者 Bearer JWT |
 | `POST` | `/article/search/{page}/{size}` | 分页条件查询文章 |
 | `GET` | `/comment` | 查询全部评论 |
 | `GET` | `/comment/{id}` | 按 ID 查询评论 |
 | `GET` | `/comment/article/{articleId}` | 按文章 ID 查询评论 |
-| `POST` | `/comment` | 新增评论 |
-| `PUT` | `/comment/{id}` | 修改评论 |
-| `DELETE` | `/comment/{id}` | 删除评论 |
-| `PUT` | `/comment/thumbup/{id}` | 评论点赞 |
+| `POST` | `/comment` | 新增评论，需要 Bearer JWT |
+| `PUT` | `/comment/{id}` | 修改评论，需要作者 Bearer JWT |
+| `DELETE` | `/comment/{id}` | 删除评论，需要作者 Bearer JWT |
+| `PUT` | `/comment/thumbup/{id}` | 评论点赞，需要 Bearer JWT |
 
 评论 Controller 同时提供按评论 ID和按文章 ID查询评论：前者使用 `GET /comment/{id}`，后者使用 `GET /comment/article/{articleId}`。
 
@@ -165,10 +167,10 @@ mvn -pl how_user spring-boot:run
 
 ```text
 http://localhost:9008/demo.html
-http://localhost:9008/chatroom.html?user=alice
+http://localhost:9008/chatroom.html?token=<access-token>
 ```
 
-WebSocket 地址为 `ws://localhost:9008/im?user=alice`，HTTPS 环境自动使用 `wss`。客户端发送 JSON：
+WebSocket 地址为 `ws://localhost:9008/im?token=<access-token>`，HTTPS 环境自动使用 `wss`。先通过登录接口取得 token，再将其 URL 编码后连接。客户端发送 JSON：
 
 ```json
 {"type":"join","room":"lobby"}
@@ -184,8 +186,9 @@ WebSocket 地址为 `ws://localhost:9008/im?user=alice`，HTTPS 环境自动使�
 - `how_common` 不单独启动，只作为公共依赖被其他模块引用。
 - 数据访问使用 Spring Data JPA，当前 Spring Boot 2.7 使用 `javax.persistence`；升级 Spring Boot 3.x 时需要同步迁移至 `jakarta.persistence`。
 - 配置文件中的 MySQL 驱动类使用 Connector/J 8 的 `com.mysql.cj.jdbc.Driver`。
-- 当前评论点赞逻辑使用固定用户 ID `123`，实际接入登录态前不能视为完整的用户级鉴权方案。
-- 当前 IM 使用连接 URL 中的用户名作为展示身份，仅适合开发测试，不能替代登录认证。
+- 当前访问令牌由 `how_user` 签发，其他服务使用同一 `HOW_AUTH_JWT_SECRET` 校验；暂无刷新、退出或主动撤销接口。
+- 评论点赞已按 token 用户进行去重；Redis 与 MySQL 的跨存储补偿和 IM 多实例广播仍未完成。
+- 当前 IM 使用 token 对应的用户 ID 作为身份，消息仍保存在进程内存中，仅适合开发测试。
 
 ## 构建验证
 
@@ -195,4 +198,4 @@ WebSocket 地址为 `ws://localhost:9008/im?user=alice`，HTTPS 环境自动使�
 mvn clean -DskipTests compile
 ```
 
-结果为 `BUILD SUCCESS`。项目当前未提供完整的自动化测试用例，编译通过不代表外部 MySQL 和 Redis 配置已经可用。
+结果为 `BUILD SUCCESS`。当前已包含认证、JWT、WebSocket 握手和评论点赞单元测试；测试不替代对外部 MySQL、Redis 配置的运行验证。

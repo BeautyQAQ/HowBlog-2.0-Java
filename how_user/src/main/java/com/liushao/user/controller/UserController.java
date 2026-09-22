@@ -2,9 +2,9 @@ package com.liushao.user.controller;
 
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
-import com.liushao.user.pojo.User;
+import com.liushao.user.pojo.LoginRequest;
+import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -12,17 +12,20 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
 
     @RequestMapping(value = "login", method = RequestMethod.POST)
-    public Result login(@RequestBody User user) {
-        User result = userService.login(user);
+    public Result login(@RequestBody LoginRequest loginRequest) {
+        LoginResponse result = userService.login(loginRequest);
 
         if (result != null) {
             return new Result(true, StatusCode.OK, "登录成功", result);
         }
 
-        return new Result(false, StatusCode.OK, "登录失败");
+        return new Result(false, StatusCode.LOGINERROR, "手机号或密码错误");
     }
 }

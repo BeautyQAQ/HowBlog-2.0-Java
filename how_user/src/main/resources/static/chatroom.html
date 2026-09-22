@@ -29,9 +29,9 @@
 </section>
 <script>
     const params = new URLSearchParams(location.search);
-    const user = params.get('user') || `guest-${Math.random().toString(36).slice(2, 7)}`;
+    const token = params.get('token');
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}/im?user=${encodeURIComponent(user)}`);
+    let socket;
     const log = document.getElementById('log');
     const content = document.getElementById('content');
     const sendButton = document.getElementById('send');
@@ -44,23 +44,29 @@
         log.scrollTop = log.scrollHeight;
     }
 
-    socket.onopen = () => {
-        document.getElementById('status').textContent = `已连接：${user}`;
-        content.disabled = false;
-        sendButton.disabled = false;
-        socket.send(JSON.stringify({ type: 'join', room: 'lobby' }));
-    };
-    socket.onmessage = ({ data }) => {
-        const event = JSON.parse(data);
-        if (event.type === 'message') append(`${event.from}：${event.content}`);
-        if (event.type === 'presence') append(`${event.user} ${event.event === 'online' ? '加入聊天室' : '离开聊天室'}`, 'system');
-    };
-    socket.onclose = () => { document.getElementById('status').textContent = '连接已关闭'; };
-    socket.onerror = () => append('无法连接到 IM 服务，请先启动 how_user', 'system');
+    if (!token) {
+        document.getElementById('status').textContent = '缺少登录 token';
+    } else {
+        socket = new WebSocket(`${protocol}//${location.host}/im?token=${encodeURIComponent(token)}`);
+        socket.onopen = () => {
+            document.getElementById('status').textContent = '已连接';
+            content.disabled = false;
+            sendButton.disabled = false;
+            socket.send(JSON.stringify({ type: 'join', room: 'lobby' }));
+        };
+        socket.onmessage = ({ data }) => {
+            const event = JSON.parse(data);
+            if (event.type === 'ready') document.getElementById('status').textContent = `已连接：${event.user}`;
+            if (event.type === 'message') append(`${event.from}：${event.content}`);
+            if (event.type === 'presence') append(`${event.user} ${event.event === 'online' ? '加入聊天室' : '离开聊天室'}`, 'system');
+        };
+        socket.onclose = () => { document.getElementById('status').textContent = '连接已关闭'; };
+        socket.onerror = () => append('无法连接到 IM 服务，请检查登录 token 和 how_user 服务', 'system');
+    }
 
     function send() {
         const value = content.value.trim();
-        if (!value || socket.readyState !== WebSocket.OPEN) return;
+        if (!value || !socket || socket.readyState !== WebSocket.OPEN) return;
         socket.send(JSON.stringify({ type: 'message', room: 'lobby', content: value }));
         content.value = '';
     }

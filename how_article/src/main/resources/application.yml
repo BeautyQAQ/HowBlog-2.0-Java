@@ -16,3 +16,8 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+how:
+  auth:
+    jwt:
+      secret: ${HOW_AUTH_JWT_SECRET:}
+      access-token-ttl-seconds: ${HOW_AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS:1800}

@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "1.1.0",
-  "revision": 2,
+  "contractVersion": "2.0.0",
+  "revision": 4,
   "updatedAt": "2026-09-22",
-  "latestChangeId": "API-20260922-002",
-  "latestChangeType": "fix",
-  "breaking": false,
+  "latestChangeId": "API-20260922-004",
+  "latestChangeType": "protocol",
+  "breaking": true,
   "requiresFrontendAction": true,
   "changedAreas": [
-    "user-rest",
-    "label-rest",
-    "article-rest",
-    "comment-rest",
-    "websocket-im"
+    "user-rest-auth",
+    "label-rest-auth",
+    "article-rest-auth",
+    "comment-rest-auth",
+    "websocket-im-auth"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

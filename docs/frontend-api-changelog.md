@@ -38,3 +38,24 @@
 - 变更内容：将按文章 ID 查询评论的路径从冲突的变量模板改为明确的 `/comment/article/{articleId}`；按评论 ID 查询继续使用 `GET /comment/{id}`。
 - 前端动作：将文章评论列表请求切换为 `GET /comment/article/{articleId}`，并保存已处理 revision `2`。
 - 发布状态：已发布。
+
+## Revision 3 - API-20260922-003
+
+- 日期：2026-09-22
+- 类型：修复
+- 破坏性变更：否
+- 影响范围：用户服务 `POST /user/login`
+- 变更内容：登录请求只使用 `mobile` 和 `password`；认证失败统一返回状态码 `20002`；成功响应改为脱敏资料，仅返回 `id`、`mobile`、`nickname` 和 `avatar`；存量明文密码在成功登录时升级为 BCrypt。当前仍不签发 token。
+- 前端动作：登录请求不要依赖其他用户字段；按 `flag` 或 `code=20002` 处理认证失败；不要读取登录响应中的密码字段；保存已处理 revision `3`。
+- 发布状态：已发布。
+
+## Revision 4 - API-20260922-004
+
+- 日期：2026-09-22
+- 类型：协议变更
+- 破坏性变更：是
+- 影响范围：用户登录、标签写接口、文章写接口、评论写接口和 WebSocket IM
+- 变更内容：登录成功响应新增 Bearer JWT、`tokenType` 和 `expiresIn`；文章、评论、标签的写接口需要 `Authorization: Bearer <token>`；文章和评论创建时使用 token 用户 ID，修改/删除时校验作者归属，评论编辑仅允许修改正文；评论点赞改为按真实 token 用户去重；WebSocket 连接从 `/im?user=...` 改为 `/im?token=...`，连接身份由 token 决定。缺少或无效 token 的 REST 受保护请求返回 HTTP 401 和业务码 20003。
+- 前端动作：保存登录响应中的访问 token；为所有受保护写请求附加 `Authorization`；移除请求体中作为身份依据的 `userid`；将 WebSocket URL 切换为 `/im?token=<url-encoded-token>`；处理 HTTP 401 和业务码 20003；保存已处理 revision `4`。
+- 已知限制：当前没有刷新/退出登录接口；标签暂未区分管理员角色；WebSocket token 暂通过 URL 传递；Redis 与 MySQL 跨存储补偿仍待实现。
+- 发布状态：已发布。

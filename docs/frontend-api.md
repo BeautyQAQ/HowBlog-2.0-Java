@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`1.1.0`
-> 当前同步 revision：`2`
+> 当前契约版本：`2.0.0`
+> 当前同步 revision：`4`
 > 最后更新：`2026-09-22`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -41,7 +41,9 @@ REST 接口路径均相对于对应服务的 Base URL。例如，文章列表的
 
 - 请求体和成功响应使用 JSON；发送请求时使用 `Content-Type: application/json`。
 - 当前控制器启用了跨域访问，具体部署环境仍应根据网关和安全策略限制来源。
-- 当前接口没有统一的登录令牌机制。登录接口返回用户对象，不返回 JWT 或其他 token；前端不能假设存在 `Authorization` 认证头。
+- 登录成功后返回短期 Bearer JWT。需要认证的写接口必须发送 `Authorization: Bearer <token>`；公开查询接口和登录接口不要求该请求头。
+- 访问令牌默认有效期为 1800 秒，具体值由服务端配置决定；当前没有刷新 token、退出登录或服务端主动撤销接口。
+- 缺少或无法验证 token 的受保护请求返回 HTTP `401`，响应体仍使用 `Result`，业务码为 `20003`。
 - ID 均按字符串处理，避免在 JavaScript 中转成可能丢失精度的 number。
 - 时间字段由 Java `Date` 序列化，前端应按可配置的日期解析逻辑处理，不要依赖某个未在契约中固定的显示格式。
 
@@ -73,8 +75,8 @@ REST 接口返回 `Result`：
 | ---: | --- |
 | 20000 | 成功 |
 | 20001 | 通用失败 |
-| 20002 | 用户名或密码错误（当前登录实现实际返回 20000，见登录接口说明） |
-| 20003 | 权限不足，当前未有接口使用 |
+| 20002 | 手机号或密码错误 |
+| 20003 | 未认证或权限不足 |
 | 20004 | 远程调用失败；评论重复点赞时也使用此码 |
 | 20005 | 重复操作 |
 
@@ -90,7 +92,7 @@ REST 接口返回 `Result`：
 | --- | --- | --- |
 | `id` | string | 用户 ID |
 | `mobile` | string | 手机号 |
-| `password` | string | 密码；当前登录响应可能原样返回，请勿持久化 |
+| `password` | string | 密码；仅用于认证请求，服务端响应不会返回 |
 | `nickname` | string | 昵称 |
 | `sex` | string | 性别 |
 | `birthday` | datetime/null | 生日 |
@@ -154,7 +156,7 @@ REST 接口返回 `Result`：
 
 ### POST `/user/login`
 
-用户登录。当前实现使用请求体中所有非空字段做精确匹配，因此前端通常发送 `mobile` 和 `password`；不要把未参与登录的用户字段随意带入请求。
+用户登录。请求只使用 `mobile` 和 `password` 认证；其他 JSON 字段会被忽略，不参与用户匹配。成功后返回 Bearer JWT，前端应保存 token 并在后续受保护请求中发送 `Authorization` 请求头。
 
 请求示例：
 
@@ -165,7 +167,7 @@ REST 接口返回 `Result`：
 }
 ```
 
-成功响应的 `data` 为完整 `User` 对象：
+成功响应的 `data` 为脱敏用户资料和访问令牌，只包含 `id`、`mobile`、`nickname`、`avatar`、`tokenType`、`token` 和 `expiresIn`：
 
 ```json
 {
@@ -175,23 +177,27 @@ REST 接口返回 `Result`：
   "data": {
     "id": "10001",
     "mobile": "13800000000",
-    "nickname": "Alice"
+    "nickname": "Alice",
+    "avatar": "https://example.test/avatar.png",
+    "tokenType": "Bearer",
+    "token": "<access-token>",
+    "expiresIn": 1800
   }
 }
 ```
 
-用户不存在时当前实现返回：
+手机号不存在、密码错误、手机号对应多条用户记录或请求缺少手机号/密码时，当前实现返回：
 
 ```json
 {
   "flag": false,
-  "code": 20000,
-  "message": "登录失败",
+  "code": 20002,
+  "message": "手机号或密码错误",
   "data": null
 }
 ```
 
-当前没有注册、退出登录、刷新 token 或用户资料修改接口。
+存量明文密码在一次成功登录后会升级为 BCrypt 哈希；不会执行批量改密。当前没有注册、退出登录、刷新 token 或用户资料修改接口。
 
 ## 基础服务（9001）
 
@@ -207,7 +213,7 @@ REST 接口返回 `Result`：
 
 ### POST `/label`
 
-新增标签。后端会覆盖请求体中的 `id` 并生成新 ID。
+新增标签。需要 `Authorization: Bearer <token>`。后端会覆盖请求体中的 `id` 并生成新 ID；当前只要求已认证，尚未建立管理员角色校验。
 
 请求体为 `Label`，通常至少包含：
 
@@ -223,7 +229,7 @@ REST 接口返回 `Result`：
 
 ### PUT `/label/{id}`
 
-修改标签。路径中的 `id` 会覆盖请求体中的 `id`；当前只更新请求体中非空的字段。
+修改标签。需要 `Authorization: Bearer <token>`。路径中的 `id` 会覆盖请求体中的 `id`；当前只更新请求体中非空的字段。
 
 请求体为需要修改的 `Label` 字段，例如：
 
@@ -238,7 +244,7 @@ REST 接口返回 `Result`：
 
 ### DELETE `/label/{id}`
 
-删除标签。ID 不存在时当前服务仍可能返回删除成功。
+删除标签。需要 `Authorization: Bearer <token>`。ID 不存在时当前服务仍可能返回删除成功。
 
 ## 文章服务（9004）
 
@@ -252,15 +258,15 @@ REST 接口返回 `Result`：
 
 ### POST `/article`
 
-新增文章。后端生成 `id`，请求体为 `Article`。当前没有强制字段校验。
+新增文章。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；当前没有强制字段校验。
 
 ### PUT `/article/{articleId}`
 
-修改文章。路径 ID 会覆盖请求体中的 `id`；当前只更新请求体中非空的字段。不存在的文章可能被静默忽略，但接口仍返回修改成功。
+修改文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。路径 ID 会覆盖请求体中的 `id`；作者只能修改内容字段，`userid`、统计字段、审核状态、置顶状态和发布时间由服务端维护。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
 
 ### DELETE `/article/{articleId}`
 
-删除文章。不存在的文章可能被静默忽略，但接口仍返回删除成功。
+删除文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
 
 ### POST `/article/search/{page}/{size}`
 
@@ -322,7 +328,7 @@ Content-Type: application/json
 
 ### POST `/comment`
 
-新增评论。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`。请求体通常包含 `articleid`、`content`、`userid` 和可选的 `parentid`。
+新增评论。需要 `Authorization: Bearer <token>`。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`；`userid` 始终使用 token 中的用户 ID，忽略请求体中的值。请求体通常包含 `articleid`、`content` 和可选的 `parentid`。
 
 请求示例：
 
@@ -330,26 +336,26 @@ Content-Type: application/json
 {
   "articleid": "20001",
   "content": "这是一条评论",
-  "userid": "10001",
   "parentid": null
 }
 ```
 
 ### PUT `/comment/{id}`
 
-修改评论。路径 ID 会写入请求体对象的 `_id`；当前只由持久层按 ID 更新，未提供字段校验。
+修改评论。需要 `Authorization: Bearer <token>`，且当前用户必须是评论作者。路径 ID 会写入请求体对象的 `_id`；作者只能修改 `content`，不能修改评论归属、父评论、`userid`、发布时间或点赞数。无权操作或评论不存在时返回 `flag: false`、`code: 20003`。
 
 ### DELETE `/comment/{id}`
 
-按 ID 删除评论。
+按 ID 删除评论。需要 `Authorization: Bearer <token>`，且当前用户必须是评论作者。无权操作或评论不存在时返回 `flag: false`、`code: 20003`。
 
 ### PUT `/comment/thumbup/{id}`
 
-评论点赞。当前后端使用固定用户 ID `123` 判断重复点赞，并没有接入真实登录态。
+评论点赞。需要 `Authorization: Bearer <token>`，后端使用 token 中的用户 ID 判断重复点赞。
 
 - 首次点赞通常返回 `flag: true`、`code: 20000`、`message: "点赞成功"`。
-- 同一服务进程中再次点赞通常返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
-- 前端不能把当前固定用户 ID 逻辑当成真实鉴权。
+- 同一用户再次点赞返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
+- 评论不存在时返回 `flag: false`、`code: 20001`、`message: "评论不存在"`。
+- 点赞去重记录写入 Redis，计数在 MySQL 中原子递增；Redis/MySQL 提交失败时的最终一致性补偿仍属于后续任务。
 
 按评论 ID和按文章 ID 查询使用不同的路径模板，前端应使用 `/comment/{id}` 查询单条评论，使用 `/comment/article/{articleId}` 查询文章评论列表；不要通过同一个路径推断查询语义。
 
@@ -358,10 +364,10 @@ Content-Type: application/json
 ### 连接地址
 
 ```text
-ws://localhost:9008/im?user=alice
+ws://localhost:9008/im?token=<access-token>
 ```
 
-HTTPS 页面使用 `wss://`。`user` 查询参数必填，目前只作为连接展示身份，不是登录凭证。缺少该参数时连接会被关闭。
+HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询参数携带 token；token 必须经过 URL 编码。`user` 查询参数不再作为身份来源，缺少或无效 token 时连接会被拒绝。连接建立后的 `ready.user` 是 token 对应的用户 ID。
 
 ### 客户端发送消息
 
@@ -466,13 +472,14 @@ HTTPS 页面使用 `wss://`。`user` 查询参数必填，目前只作为连接�
 }
 ```
 
-当前 WebSocket 会话和消息仅保存在服务进程内存中，服务重启后丢失；同一用户重复连接时，后建立的连接会覆盖内存中的旧连接。
+当前 WebSocket 会话和消息仅保存在服务进程内存中，服务重启后丢失；同一用户重复连接时，后建立的连接会覆盖内存中的旧连接。URL token 可能被代理或访问日志记录，后续应评估改用更安全的握手凭据传递方式。
 
 ## 当前集成限制
 
-- REST 登录没有 token、刷新 token 或统一鉴权中间件。
-- 评论点赞使用固定用户 ID `123`，不能代表真实用户级点赞。
-- 评论文章查询存在路由冲突，见上文阻塞项。
+- 当前只有访问 token，没有刷新 token、退出登录或服务端主动撤销接口。
+- 文章和评论写操作已校验作者归属；标签写操作当前只要求已认证，管理员角色尚未建立。
+- 评论点赞使用 Redis 去重和 MySQL 原子计数，但跨存储提交失败的补偿策略尚未完成。
+- WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
 - 新增、修改接口没有完整的 Bean Validation；前端应自行做基础输入校验，但不能把前端校验当成后端约束。
 - 文章、标签的不存在资源操作当前可能返回成功消息，前端如需严格反馈应等待后端补充明确的错误契约。
 - 文章服务需要 MySQL 和 Redis；所有业务服务的具体连接配置属于部署环境，不写入前端代码或文档。

@@ -1,5 +1,6 @@
 package com.liushao.base.controller;
 
+import com.liushao.auth.RequireAuthentication;
 import com.liushao.base.pojo.Label;
 import com.liushao.base.service.LabelService;
 import com.liushao.entity.Result;
@@ -25,6 +26,7 @@ public class LabelController {
      * 添加一个
      */
     @PostMapping
+    @RequireAuthentication
     public Result add(@RequestBody Label label) {
         labelService.saveLabel(label);
         return new Result(true, StatusCode.OK, "添加成功");
@@ -34,6 +36,7 @@ public class LabelController {
      * 修改编辑
      */
     @PutMapping("/{id}")
+    @RequireAuthentication
     public Result edit(@RequestBody Label label, @PathVariable String id) {
         label.setId(id);
         labelService.updateLabel(label);
@@ -44,6 +47,7 @@ public class LabelController {
      * 根据id删除一个
      */
     @DeleteMapping("/{id}")
+    @RequireAuthentication
     public Result remove(@PathVariable String id) {
         labelService.deleteLabelById(id);
         return new Result(true, StatusCode.OK, "删除成功");

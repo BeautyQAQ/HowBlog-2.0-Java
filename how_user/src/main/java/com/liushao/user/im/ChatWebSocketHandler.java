@@ -9,9 +9,6 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,13 +25,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
-        String username = queryParameter(session.getUri(), "user");
+        String username = currentUser(session);
         if (username == null || username.isBlank()) {
-            session.close(CloseStatus.BAD_DATA);
+            session.close(CloseStatus.POLICY_VIOLATION);
             return;
         }
 
-        session.getAttributes().put("user", username);
         sessions.put(username, session);
         send(session, Map.of("type", "ready", "user", username));
         for (String onlineUser : sessions.keySet()) {
@@ -140,16 +136,4 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         return user == null ? null : user.toString();
     }
 
-    private String queryParameter(URI uri, String name) {
-        if (uri == null || uri.getQuery() == null) {
-            return null;
-        }
-        for (String parameter : uri.getQuery().split("&")) {
-            String[] pair = parameter.split("=", 2);
-            if (pair.length == 2 && name.equals(pair[0])) {
-                return URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
-            }
-        }
-        return null;
-    }
 }

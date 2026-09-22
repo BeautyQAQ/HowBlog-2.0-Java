@@ -1,5 +1,7 @@
 package com.liushao.article.controller;
 
+import com.liushao.auth.CurrentUserContext;
+import com.liushao.auth.RequireAuthentication;
 import com.liushao.article.pojo.Article;
 import com.liushao.article.service.ArticleService;
 import com.liushao.entity.PageResult;
@@ -39,8 +41,9 @@ public class ArticleController {
      * 新增文章数据接口
      */
     @RequestMapping(method = RequestMethod.POST)
+    @RequireAuthentication
     public Result add(@RequestBody Article article) {
-        articleService.add(article);
+        articleService.add(article, CurrentUserContext.require().getUserId());
         return new Result(true, StatusCode.OK, "添加成功");
     }
 
@@ -48,9 +51,12 @@ public class ArticleController {
      * 修改文章数据接口
      */
     @RequestMapping(value = "{articleId}", method = RequestMethod.PUT)
+    @RequireAuthentication
     public Result update(@PathVariable String articleId, @RequestBody Article article) {
         article.setId(articleId);
-        articleService.update(article);
+        if (!articleService.update(article, CurrentUserContext.require().getUserId())) {
+            return new Result(false, StatusCode.ACCESSERROR, "无权操作或文章不存在");
+        }
         return new Result(true, StatusCode.OK, "修改成功");
     }
 
@@ -58,8 +64,11 @@ public class ArticleController {
      * 删除文章数据接口
      */
     @RequestMapping(value = "{articleId}", method = RequestMethod.DELETE)
+    @RequireAuthentication
     public Result delete(@PathVariable String articleId) {
-        articleService.delete(articleId);
+        if (!articleService.delete(articleId, CurrentUserContext.require().getUserId())) {
+            return new Result(false, StatusCode.ACCESSERROR, "无权操作或文章不存在");
+        }
         return new Result(true, StatusCode.OK, "删除成功");
     }
 

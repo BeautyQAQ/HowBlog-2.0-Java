@@ -32,8 +32,8 @@
 <main>
     <section>
         <h2>连接设置</h2>
-        <label for="name">用户名</label>
-        <input id="name" autocomplete="username" placeholder="例如：alice">
+        <label for="token">登录 token</label>
+        <input id="token" autocomplete="off" placeholder="Bearer token 的值">
         <label for="room">房间（留空为广播）</label>
         <input id="room" value="lobby" placeholder="例如：lobby">
         <label for="to">私聊对象（填写后优先私聊）</label>
@@ -81,18 +81,23 @@
     }
 
     function connect() {
-        const user = $('name').value.trim();
-        if (!user) { addMessage('请先填写用户名', 'system'); return; }
+        const token = $('token').value.trim();
+        if (!token) { addMessage('请先填写登录 token', 'system'); return; }
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        socket = new WebSocket(`${protocol}//${location.host}/im?user=${encodeURIComponent(user)}`);
+        socket = new WebSocket(`${protocol}//${location.host}/im?token=${encodeURIComponent(token)}`);
         socket.onopen = () => {
             setConnected(true);
-            $('status').textContent = `已连接：${user}`;
+            $('status').textContent = '已连接';
             socket.send(JSON.stringify({ type: 'join', room: $('room').value.trim() }));
         };
         socket.onmessage = ({ data }) => {
             const event = JSON.parse(data);
-            if (event.type === 'ready') { online.add(event.user); renderOnline(); return; }
+            if (event.type === 'ready') {
+                online.add(event.user);
+                renderOnline();
+                $('status').textContent = `已连接：${event.user}`;
+                return;
+            }
             if (event.type === 'presence') {
                 event.event === 'online' ? online.add(event.user) : online.delete(event.user);
                 renderOnline();
@@ -106,7 +111,7 @@
             if (event.type === 'error') { addMessage(event.message, 'system'); }
         };
         socket.onclose = () => { setConnected(false); $('status').textContent = '连接已关闭'; };
-        socket.onerror = () => addMessage('连接失败，请确认 how_user 服务正在运行', 'system');
+        socket.onerror = () => addMessage('连接失败，请检查登录 token 和 how_user 服务', 'system');
     }
 
     function send() {

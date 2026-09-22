@@ -1,11 +1,11 @@
 package com.liushao.article.controller;
 
+import com.liushao.auth.CurrentUserContext;
+import com.liushao.auth.RequireAuthentication;
 import com.liushao.article.pojo.Comment;
 import com.liushao.article.service.CommentService;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,11 +18,11 @@ import java.util.List;
 @CrossOrigin
 public class CommentController {
 
-    @Autowired
-    private CommentService commentService;
+    private final CommentService commentService;
 
-    @Autowired
-    private RedisTemplate redisTemplate;
+    public CommentController(CommentService commentService) {
+        this.commentService = commentService;
+    }
 
     //根据id查询评论
     @RequestMapping(value = "{id}", method = RequestMethod.GET)
@@ -40,24 +40,31 @@ public class CommentController {
 
     //新增
     @RequestMapping(method = RequestMethod.POST)
+    @RequireAuthentication
     public Result save(@RequestBody Comment comment) {
-        commentService.save(comment);
+        commentService.save(comment, CurrentUserContext.require().getUserId());
         return new Result(true, StatusCode.OK, "新增成功");
     }
 
     //修改
     @RequestMapping(value = "{id}", method = RequestMethod.PUT)
+    @RequireAuthentication
     public Result update(@PathVariable String id,
                          @RequestBody Comment comment) {
         comment.set_id(id);
-        commentService.update(comment);
+        if (!commentService.update(comment, CurrentUserContext.require().getUserId())) {
+            return new Result(false, StatusCode.ACCESSERROR, "无权操作或评论不存在");
+        }
         return new Result(true, StatusCode.OK, "修改成功");
     }
 
     //删除
     @RequestMapping(value = "{id}", method = RequestMethod.DELETE)
+    @RequireAuthentication
     public Result deleteById(@PathVariable String id) {
-        commentService.deleteById(id);
+        if (!commentService.deleteById(id, CurrentUserContext.require().getUserId())) {
+            return new Result(false, StatusCode.ACCESSERROR, "无权操作或评论不存在");
+        }
         return new Result(true, StatusCode.OK, "删除成功");
     }
 
@@ -70,19 +77,18 @@ public class CommentController {
 
     //评论点赞
     @RequestMapping(value = "thumbup/{id}", method = RequestMethod.PUT)
+    @RequireAuthentication
     public Result thumbup(@PathVariable String id) {
-        //todo 获取用户id  暂时模拟获取到了用户id
-        String userid = "123";
-        //在redis中查询用户是否已经点赞
-        Object result = redisTemplate.opsForValue().get("thumbup_" + userid + "_" + id);
-        //如果点赞不能重复点赞
-        if (result != null) {
+        CommentService.ThumbupResult result = commentService.thumbup(
+                id,
+                CurrentUserContext.require().getUserId()
+        );
+        if (result == CommentService.ThumbupResult.DUPLICATE) {
             return new Result(false, StatusCode.REMOTEERROR, "不能重复点赞");
         }
-        //如果没有点赞，可以进行点赞操作
-        commentService.thumbup(id);
-        //保存点赞记录
-        redisTemplate.opsForValue().set("thumbup_" + userid + "_" + id, 1);
+        if (result == CommentService.ThumbupResult.NOT_FOUND) {
+            return new Result(false, StatusCode.ERROR, "评论不存在");
+        }
         return new Result(true, StatusCode.OK, "点赞成功");
     }
 }

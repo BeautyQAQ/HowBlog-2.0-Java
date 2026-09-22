@@ -10,6 +10,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import javax.persistence.criteria.Predicate;
@@ -30,37 +31,38 @@ public class ArticleService {
         return articleDao.findById(id).orElse(null);
     }
 
-    public void add(Article article) {
+    public void add(Article article, String userId) {
         article.setId(idWorker.nextId() + "");
+        article.setUserid(userId);
         articleDao.save(article);
     }
 
-    public void update(Article article) {
-        articleDao.findById(article.getId()).ifPresent(existing -> {
+    public boolean update(Article article, String userId) {
+        return articleDao.findById(article.getId())
+                .filter(existing -> userId.equals(existing.getUserid()))
+                .map(existing -> {
             if (article.getColumnid() != null) existing.setColumnid(article.getColumnid());
-            if (article.getUserid() != null) existing.setUserid(article.getUserid());
             if (article.getTitle() != null) existing.setTitle(article.getTitle());
             if (article.getContent() != null) existing.setContent(article.getContent());
             if (article.getImage() != null) existing.setImage(article.getImage());
-            if (article.getCreatetime() != null) existing.setCreatetime(article.getCreatetime());
-            if (article.getUpdatetime() != null) existing.setUpdatetime(article.getUpdatetime());
             if (article.getIspublic() != null) existing.setIspublic(article.getIspublic());
-            if (article.getIstop() != null) existing.setIstop(article.getIstop());
-            if (article.getVisits() != null) existing.setVisits(article.getVisits());
-            if (article.getThumbup() != null) existing.setThumbup(article.getThumbup());
-            if (article.getComment() != null) existing.setComment(article.getComment());
-            if (article.getState() != null) existing.setState(article.getState());
             if (article.getChannelid() != null) existing.setChannelid(article.getChannelid());
             if (article.getUrl() != null) existing.setUrl(article.getUrl());
             if (article.getType() != null) existing.setType(article.getType());
+            existing.setUpdatetime(new Date());
             articleDao.save(existing);
-        });
+            return true;
+        }).orElse(false);
     }
 
-    public void delete(String id) {
-        if (articleDao.existsById(id)) {
-            articleDao.deleteById(id);
-        }
+    public boolean delete(String id, String userId) {
+        return articleDao.findById(id)
+                .filter(article -> userId.equals(article.getUserid()))
+                .map(article -> {
+                    articleDao.delete(article);
+                    return true;
+                })
+                .orElse(false);
     }
 
     public Page<Article> search(Map<String, Object> conditions, int page, int size) {

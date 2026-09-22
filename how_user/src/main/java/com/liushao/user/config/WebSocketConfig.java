@@ -1,6 +1,7 @@
 package com.liushao.user.config;
 
 import com.liushao.user.im.ChatWebSocketHandler;
+import com.liushao.user.im.JwtHandshakeInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -11,14 +12,20 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final ChatWebSocketHandler chatWebSocketHandler;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
-    public WebSocketConfig(ChatWebSocketHandler chatWebSocketHandler) {
+    public WebSocketConfig(
+            ChatWebSocketHandler chatWebSocketHandler,
+            JwtHandshakeInterceptor jwtHandshakeInterceptor
+    ) {
         this.chatWebSocketHandler = chatWebSocketHandler;
+        this.jwtHandshakeInterceptor = jwtHandshakeInterceptor;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(chatWebSocketHandler, "/im")
+            .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOrigins("*");
     }
 }
