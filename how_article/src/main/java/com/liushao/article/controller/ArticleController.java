@@ -9,7 +9,10 @@ import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+
+import com.liushao.web.ValidationGroups;
 
 import java.util.List;
 import java.util.Map;
@@ -42,7 +45,7 @@ public class ArticleController {
      */
     @RequestMapping(method = RequestMethod.POST)
     @RequireAuthentication
-    public Result add(@RequestBody Article article) {
+    public Result add(@Validated(ValidationGroups.Create.class) @RequestBody Article article) {
         articleService.add(article, CurrentUserContext.require().getUserId());
         return new Result(true, StatusCode.OK, "添加成功");
     }
@@ -52,7 +55,8 @@ public class ArticleController {
      */
     @RequestMapping(value = "{articleId}", method = RequestMethod.PUT)
     @RequireAuthentication
-    public Result update(@PathVariable String articleId, @RequestBody Article article) {
+    public Result update(@PathVariable String articleId,
+                         @Validated(ValidationGroups.Update.class) @RequestBody Article article) {
         article.setId(articleId);
         if (!articleService.update(article, CurrentUserContext.require().getUserId())) {
             return new Result(false, StatusCode.ACCESSERROR, "无权操作或文章不存在");

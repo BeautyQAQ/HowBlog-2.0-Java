@@ -9,6 +9,10 @@ import javax.persistence.Lob;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Pattern;
+
+import com.liushao.web.ValidationGroups;
 
 /**
  * @author huangshen
@@ -23,8 +27,12 @@ public class Article implements Serializable {
 
     private String columnid;    //专栏ID
     private String userid;      //用户ID
+    @NotBlank(groups = ValidationGroups.Create.class)
+    @Pattern(regexp = "(?s).*\\S.*", groups = ValidationGroups.Update.class)
     private String title;       //标题
     @Lob
+    @NotBlank(groups = ValidationGroups.Create.class)
+    @Pattern(regexp = "(?s).*\\S.*", groups = ValidationGroups.Update.class)
     private String content;     //文章正文
     private String image;       //文章封面
     @Temporal(TemporalType.TIMESTAMP)

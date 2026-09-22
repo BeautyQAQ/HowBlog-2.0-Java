@@ -1,6 +1,6 @@
 # 前端接口契约变更记录
 
-本文档采用追加方式维护，不删除或改写已发布的历史条目。每一条记录的 `revision` 必须与 [frontend-api-status.json](frontend-api-status.json) 中的当前 revision 一致。
+本文档采用追加方式维护，不删除或改写已发布的历史条目。最新一条记录的 `revision` 必须与 [frontend-api-status.json](frontend-api-status.json) 中的当前 revision 一致，历史条目保留各自的 revision。
 
 ## 记录格式
 
@@ -59,3 +59,15 @@
 - 前端动作：保存登录响应中的访问 token；为所有受保护写请求附加 `Authorization`；移除请求体中作为身份依据的 `userid`；将 WebSocket URL 切换为 `/im?token=<url-encoded-token>`；处理 HTTP 401 和业务码 20003；保存已处理 revision `4`。
 - 已知限制：当前没有刷新/退出登录接口；标签暂未区分管理员角色；WebSocket token 暂通过 URL 传递；Redis 与 MySQL 跨存储补偿仍待实现。
 - 发布状态：已发布。
+
+## Revision 5 - API-20260922-005
+
+- 日期：2026-09-22
+- 类型：修复 / 协议变更
+- 破坏性变更：是；contract version 升至 `3.0.0`。
+- 影响范围：三个服务的 REST 控制器错误响应；`POST/PUT /article`、`POST /article/search/{page}/{size}`、`POST/PUT /comment`、`POST/PUT /label`；单条文章/评论/标签查询、标签修改/删除、`PUT /comment/thumbup/{id}`。PUT 的实际资源路径包含原有 ID 参数，路由不变。
+- 变更内容：异常响应统一封装，坏 JSON、请求体缺失和参数校验失败返回 HTTP 400；未知异常返回 HTTP 500 和固定脱敏消息，不再回传底层异常原文。保留 MVC 的 405、415 等状态。新增文章必填非空白标题/正文，评论必填非空白文章 ID/正文，标签必填非空白名称；编辑保留部分更新语义，相关文本如提供不能为空白，标签计数不能为负数。文章分页限制为 `page >= 1`、`1 <= size <= 100`，不再自动纠正非法值。单条查询、标签修改/删除和评论点赞对象不存在返回 HTTP 404、业务码 20001、消息“资源不存在”。
+- 保持不变：认证失败 HTTP 401/20003，文章/评论非作者或缺失资源修改/删除的 HTTP 200/20003 合并响应，合法登录 JSON 缺少凭据的 HTTP 200/20002，重复点赞业务码 20004；WebSocket 协议不变。
+- 前端动作：提交前校验上述字段；限制分页输入；统一请求封装处理 HTTP 400/404/500 的 `Result`，不要再依赖不存在资源返回成功或底层异常文本；保留原有 401 登录失效和业务码判断；保存已处理 revision `5`。
+- 验证：JDK 21 下全模块 `mvn clean test` 通过，共 74 项测试，其中新增 55 项 MVC 切片测试；未执行真实 MySQL/Redis 联调。
+- 发布状态：仓库 `docs/` 三件套已同步；前端共享路径或发布 URL 尚未确认，外部发布待完成。

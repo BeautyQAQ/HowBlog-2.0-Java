@@ -7,6 +7,10 @@ import com.liushao.article.service.CommentService;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
+
+import com.liushao.web.ResourceNotFoundException;
+import com.liushao.web.ValidationGroups;
 
 import java.util.List;
 
@@ -41,7 +45,7 @@ public class CommentController {
     //新增
     @RequestMapping(method = RequestMethod.POST)
     @RequireAuthentication
-    public Result save(@RequestBody Comment comment) {
+    public Result save(@Validated(ValidationGroups.Create.class) @RequestBody Comment comment) {
         commentService.save(comment, CurrentUserContext.require().getUserId());
         return new Result(true, StatusCode.OK, "新增成功");
     }
@@ -50,7 +54,7 @@ public class CommentController {
     @RequestMapping(value = "{id}", method = RequestMethod.PUT)
     @RequireAuthentication
     public Result update(@PathVariable String id,
-                         @RequestBody Comment comment) {
+                         @Validated(ValidationGroups.Update.class) @RequestBody Comment comment) {
         comment.set_id(id);
         if (!commentService.update(comment, CurrentUserContext.require().getUserId())) {
             return new Result(false, StatusCode.ACCESSERROR, "无权操作或评论不存在");
@@ -87,7 +91,7 @@ public class CommentController {
             return new Result(false, StatusCode.REMOTEERROR, "不能重复点赞");
         }
         if (result == CommentService.ThumbupResult.NOT_FOUND) {
-            return new Result(false, StatusCode.ERROR, "评论不存在");
+            throw new ResourceNotFoundException();
         }
         return new Result(true, StatusCode.OK, "点赞成功");
     }

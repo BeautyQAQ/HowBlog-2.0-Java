@@ -3,6 +3,7 @@ package com.liushao.article.service;
 import com.liushao.article.dao.CommentDao;
 import com.liushao.article.pojo.Comment;
 import com.liushao.util.IdWorker;
+import com.liushao.web.ResourceNotFoundException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,7 @@ public class CommentService {
     }
 
     public Comment findById(String id) {
-        return commentDao.findById(id).orElse(null);
+        return commentDao.findById(id).orElseThrow(ResourceNotFoundException::new);
     }
 
     public List<Comment> findAll() {

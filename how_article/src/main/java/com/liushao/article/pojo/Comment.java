@@ -9,6 +9,10 @@ import javax.persistence.Lob;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Pattern;
+
+import com.liushao.web.ValidationGroups;
 
 
 /**
@@ -21,8 +25,11 @@ public class Comment implements Serializable {
     @Id
     @Column(name = "id")
     private String _id;
+    @NotBlank(groups = ValidationGroups.Create.class)
     private String articleid;
     @Lob
+    @NotBlank(groups = ValidationGroups.Create.class)
+    @Pattern(regexp = "(?s).*\\S.*", groups = ValidationGroups.Update.class)
     private String content;
     private String userid;
     private String parentid;

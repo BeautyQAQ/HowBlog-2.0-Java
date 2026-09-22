@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`2.0.0`
-> 当前同步 revision：`4`
+> 当前契约版本：`3.0.0`
+> 当前同步 revision：`5`
 > 最后更新：`2026-09-22`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -82,9 +82,32 @@ REST 接口返回 `Result`：
 
 前端应优先根据 `flag` 判断业务成功与否，再使用 `code` 和 `message` 展示或分流；同时处理非 2xx HTTP 响应和网络错误。
 
+### 错误响应与输入边界
+
+三个服务的控制器异常统一返回 `Result`，不返回异常原文、SQL 或堆栈；错误响应的 `data` 为 `null`。
+
+| 场景 | HTTP 状态 | code | message |
+| --- | ---: | ---: | --- |
+| 请求体缺失、JSON `null`、坏 JSON、字段类型错误、校验失败、分页越界 | 400 | 20001 | 请求格式或参数不正确 |
+| 未认证或 token 无效 | 401 | 20003 | 请先登录 |
+| 单条文章/评论/标签查询不存在，标签修改/删除不存在，评论点赞对象不存在 | 404 | 20001 | 资源不存在 |
+| 控制器路由不支持的 HTTP 方法 | 405 | 20001 | 请求格式或参数不正确 |
+| 请求体媒体类型不支持 | 415 | 20001 | 请求格式或参数不正确 |
+| 控制器执行中的未预期异常 | 500 | 20001 | 服务暂时不可用，请稍后重试 |
+
+文章/评论修改和删除仍将“非作者或资源不存在”合并为 HTTP 200、`flag: false`、`code: 20003`，避免改变现有权限边界。登录请求为合法 JSON 对象但凭据缺失时，仍返回 HTTP 200、`code: 20002`；这与请求体无法解析的 HTTP 400 不同。
+
+写操作输入约束：
+
+- 新增文章：`title` 和 `content` 必填，不能是空字符串或纯空白。
+- 新增评论：`articleid` 和 `content` 必填，不能是空字符串或纯空白。
+- 新增标签：`labelname` 必填且非空白；`count`、`fans` 如提供则必须大于等于 0。
+- 编辑文章的 `title`、`content`，评论的 `content`，标签的 `labelname`：未提供或为 `null` 时保留原值；提供字符串时不能为空白。标签编辑的 `count`、`fans` 如提供也必须大于等于 0。
+- 本轮不新增最大文本长度、状态枚举、评论关联文章/父评论存在性约束；这些不属于已经实现的校验。
+
 ## 数据模型
 
-以下字段来自当前接口实际接收或返回的 Java 对象。没有标记为必填的字段，当前后端没有 Bean Validation 强制校验；业务上是否必填仍应由前端界面保证。
+以下字段来自当前接口实际接收或返回的 Java 对象。必填和编辑约束以“错误响应与输入边界”及具体接口说明为准；未明确声明的字段约束不代表后端已经实现。
 
 ### User
 
@@ -209,13 +232,13 @@ REST 接口返回 `Result`：
 
 ### GET `/label/{id}`
 
-按 ID 查询标签。不存在时 `data` 为 `null`，当前仍返回 `flag: true`。
+按 ID 查询标签。不存在时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
 
 ### POST `/label`
 
 新增标签。需要 `Authorization: Bearer <token>`。后端会覆盖请求体中的 `id` 并生成新 ID；当前只要求已认证，尚未建立管理员角色校验。
 
-请求体为 `Label`，通常至少包含：
+请求体为 `Label`，`labelname` 必填且非空白，`count`、`fans` 如提供不能为负数，例如：
 
 ```json
 {
@@ -240,11 +263,11 @@ REST 接口返回 `Result`：
 }
 ```
 
-如果 ID 不存在，当前服务不抛出业务错误，仍可能返回修改成功。
+如果 ID 不存在，返回 HTTP 404、`code: 20001`。`labelname` 如提供不能为空白，`count`、`fans` 如提供不能为负数。
 
 ### DELETE `/label/{id}`
 
-删除标签。需要 `Authorization: Bearer <token>`。ID 不存在时当前服务仍可能返回删除成功。
+删除标签。需要 `Authorization: Bearer <token>`。ID 不存在时返回 HTTP 404、`code: 20001`。
 
 ## 文章服务（9004）
 
@@ -254,11 +277,11 @@ REST 接口返回 `Result`：
 
 ### GET `/article/{articleId}`
 
-按 ID 查询文章。不存在时 `data` 为 `null`，当前仍返回 `flag: true`。
+按 ID 查询文章。不存在时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
 
 ### POST `/article`
 
-新增文章。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；当前没有强制字段校验。
+新增文章。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。
 
 ### PUT `/article/{articleId}`
 
@@ -272,8 +295,8 @@ REST 接口返回 `Result`：
 
 按条件分页查询文章。
 
-- `page` 从 `1` 开始；小于 `1` 时按第 `1` 页处理。
-- `size` 小于 `1` 时按 `1` 条处理。
+- `page` 从 `1` 开始，必须大于等于 `1` 且在 Java int 范围内。
+- `size` 必须在 `1` 到 `100` 之间，包含边界；越界或无法解析的分页参数返回 HTTP 400、`code: 20001`，不再自动纠正。
 - 请求体是 JSON 对象，后端对字段做精确相等匹配，不是模糊搜索。
 - 当前允许的条件字段为：`id`、`columnid`、`userid`、`title`、`content`、`image`、`createtime`、`updatetime`、`ispublic`、`istop`、`visits`、`thumbup`、`comment`、`state`、`channelid`、`url`、`type`。
 - 未知字段会被忽略；值为 `null` 的字段会被忽略。
@@ -320,7 +343,7 @@ Content-Type: application/json
 
 ### GET `/comment/{id}`
 
-按评论 ID 查询评论。不存在时 `data` 为 `null`，当前仍返回 `flag: true`。
+按评论 ID 查询评论。不存在时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
 
 ### GET `/comment/article/{articleId}`
 
@@ -328,7 +351,7 @@ Content-Type: application/json
 
 ### POST `/comment`
 
-新增评论。需要 `Authorization: Bearer <token>`。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`；`userid` 始终使用 token 中的用户 ID，忽略请求体中的值。请求体通常包含 `articleid`、`content` 和可选的 `parentid`。
+新增评论。需要 `Authorization: Bearer <token>`。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`；`userid` 始终使用 token 中的用户 ID，忽略请求体中的值。请求体必须包含非空白的 `articleid` 和 `content`，`parentid` 可选。
 
 请求示例：
 
@@ -354,7 +377,7 @@ Content-Type: application/json
 
 - 首次点赞通常返回 `flag: true`、`code: 20000`、`message: "点赞成功"`。
 - 同一用户再次点赞返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
-- 评论不存在时返回 `flag: false`、`code: 20001`、`message: "评论不存在"`。
+- 评论不存在时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
 - 点赞去重记录写入 Redis，计数在 MySQL 中原子递增；Redis/MySQL 提交失败时的最终一致性补偿仍属于后续任务。
 
 按评论 ID和按文章 ID 查询使用不同的路径模板，前端应使用 `/comment/{id}` 查询单条评论，使用 `/comment/article/{articleId}` 查询文章评论列表；不要通过同一个路径推断查询语义。
@@ -480,8 +503,8 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - 文章和评论写操作已校验作者归属；标签写操作当前只要求已认证，管理员角色尚未建立。
 - 评论点赞使用 Redis 去重和 MySQL 原子计数，但跨存储提交失败的补偿策略尚未完成。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
-- 新增、修改接口没有完整的 Bean Validation；前端应自行做基础输入校验，但不能把前端校验当成后端约束。
-- 文章、标签的不存在资源操作当前可能返回成功消息，前端如需严格反馈应等待后端补充明确的错误契约。
+- 已有基础必填、非空白、非负计数和分页校验；最大文本长度、状态枚举、关联资源存在性仍未全面校验。
+- MVC 切片测试使用模拟 DAO/Redis，尚未完成真实 MySQL/Redis 联调及跨存储并发故障验证。
 - 文章服务需要 MySQL 和 Redis；所有业务服务的具体连接配置属于部署环境，不写入前端代码或文档。
 
 ## 契约维护规则

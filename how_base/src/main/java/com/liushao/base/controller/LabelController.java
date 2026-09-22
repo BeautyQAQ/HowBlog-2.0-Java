@@ -7,6 +7,9 @@ import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
+
+import com.liushao.web.ValidationGroups;
 
 import java.util.List;
 
@@ -27,7 +30,7 @@ public class LabelController {
      */
     @PostMapping
     @RequireAuthentication
-    public Result add(@RequestBody Label label) {
+    public Result add(@Validated(ValidationGroups.Create.class) @RequestBody Label label) {
         labelService.saveLabel(label);
         return new Result(true, StatusCode.OK, "添加成功");
     }
@@ -37,7 +40,7 @@ public class LabelController {
      */
     @PutMapping("/{id}")
     @RequireAuthentication
-    public Result edit(@RequestBody Label label, @PathVariable String id) {
+    public Result edit(@Validated(ValidationGroups.Update.class) @RequestBody Label label, @PathVariable String id) {
         label.setId(id);
         labelService.updateLabel(label);
         return new Result(true, StatusCode.OK, "修改成功");

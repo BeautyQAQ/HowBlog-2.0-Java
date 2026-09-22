@@ -4,6 +4,11 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Pattern;
+import javax.validation.constraints.PositiveOrZero;
+
+import com.liushao.web.ValidationGroups;
 
 /**
  * @author huangshen
@@ -14,9 +19,13 @@ public class Label {
     @Id
     @Column(name = "id")
     private String id;//OID编号
+    @NotBlank(groups = ValidationGroups.Create.class)
+    @Pattern(regexp = "(?s).*\\S.*", groups = ValidationGroups.Update.class)
     private String labelname;//标签名称
     private String state;//状态
+    @PositiveOrZero(groups = {ValidationGroups.Create.class, ValidationGroups.Update.class})
     private Long count;//使用数量
+    @PositiveOrZero(groups = {ValidationGroups.Create.class, ValidationGroups.Update.class})
     private Long fans;//关注数
     private String recommend;//是否推荐
 

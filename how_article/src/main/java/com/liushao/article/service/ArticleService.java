@@ -3,6 +3,8 @@ package com.liushao.article.service;
 import com.liushao.article.dao.ArticleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
+import com.liushao.web.InvalidRequestException;
+import com.liushao.web.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -28,7 +30,7 @@ public class ArticleService {
     }
 
     public Article findById(String id) {
-        return articleDao.findById(id).orElse(null);
+        return articleDao.findById(id).orElseThrow(ResourceNotFoundException::new);
     }
 
     public void add(Article article, String userId) {
@@ -66,6 +68,9 @@ public class ArticleService {
     }
 
     public Page<Article> search(Map<String, Object> conditions, int page, int size) {
+        if (conditions == null || page < 1 || size < 1 || size > 100) {
+            throw new InvalidRequestException();
+        }
         Specification<Article> specification = (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
             for (Map.Entry<String, Object> entry : conditions.entrySet()) {
@@ -75,9 +80,7 @@ public class ArticleService {
             }
             return builder.and(predicates.toArray(new Predicate[0]));
         };
-        int pageNumber = Math.max(page - 1, 0);
-        int pageSize = Math.max(size, 1);
-        return articleDao.findAll(specification, PageRequest.of(pageNumber, pageSize));
+        return articleDao.findAll(specification, PageRequest.of(page - 1, size));
     }
 
     private boolean isArticleField(String field) {
