@@ -21,7 +21,7 @@
 - 评论按文章查询路径已固定为 `GET /comment/article/{articleId}`，解决了与按评论 ID 查询的映射冲突。
 - REST、WebSocket、数据模型和已知限制已形成前端接口契约；远端 revision 6，用户确认前端可直接读取后端 GitHub 仓库的 `docs/`。
 - AUTH-01 至 AUTH-07 已完成本轮范围：JWT、密码脱敏、作者归属、用户级点赞、WebSocket 鉴权、统一异常及基础输入校验。
-- JDK 21 下全模块 `mvn clean test` 通过，92 项通过、1 项真实 MySQL 测试默认跳过；包含 63 项 MVC、1 项角色 H2 JPA 和 9 项会话核心事务测试。AUTH-08A 已完成基础 MySQL SQL 验证，新服务及业务全链路真实存储联调仍未完成。
+- JDK 21 下全模块 `mvn clean test` 通过，92 项通过、2 项真实 MySQL 测试默认跳过；AUTH-08A 基础 SQL 和 AUTH-09A 会话服务 MySQL 事务验收均已显式通过。用户存在性在会话验收中模拟，业务全链路联调仍未完成。
 
 ### 当前主要问题
 
@@ -229,4 +229,4 @@
 - 用户已选择数据库角色、刷新 token 和服务端退出；详细实施边界见 [auth-session-design.md](auth-session-design.md)。
 - AUTH-08A 已新增附加表迁移，并在用户授权的独立 MySQL 8 验证重复执行、事务回滚和并发单次消费；不修改存量用户表或自动授予管理员。
 - AUTH-08B 已完成数据库角色读取、标签管理员授权及运维说明；对应 revision 6。下一切片 AUTH-09 接入持久化会话、刷新轮换和 REST/IM 撤销，未实现前不更新当前接口契约为这些新能力。
-- AUTH-09A 的内部会话核心已完成 H2 事务验证，尚未接入登录和公开接口；下一步先验收 MySQL 服务事务，再接通 JWT 会话 ID、REST/IM 会话校验和刷新/退出路由。
+- AUTH-09A 的内部会话核心已完成 H2 与 MySQL 服务事务验证，并修复认证 DATETIME 字段 UTC 落库映射；尚未接入登录和公开接口。下一步接通 JWT 会话 ID、REST/IM 会话校验和刷新/退出路由，补齐真实用户与完整请求链路验证。

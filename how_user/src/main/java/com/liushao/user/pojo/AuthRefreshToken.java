@@ -7,6 +7,8 @@ import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
 
+import org.hibernate.annotations.Type;
+
 @Entity
 @Table(name = "tb_auth_refresh_token")
 public class AuthRefreshToken {
@@ -16,8 +18,10 @@ public class AuthRefreshToken {
     @Column(name = "session_id", nullable = false, length = 64, columnDefinition = "CHAR(64)")
     private String sessionId;
     @Column(name = "created_at", nullable = false)
+    @Type(type = "com.liushao.user.pojo.UtcDateTimeType")
     private LocalDateTime createdAt;
     @Column(name = "consumed_at")
+    @Type(type = "com.liushao.user.pojo.UtcDateTimeType")
     private LocalDateTime consumedAt;
 
     protected AuthRefreshToken() {

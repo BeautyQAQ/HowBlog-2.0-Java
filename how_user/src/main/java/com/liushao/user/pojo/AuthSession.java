@@ -7,6 +7,8 @@ import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
 
+import org.hibernate.annotations.Type;
+
 @Entity
 @Table(name = "tb_auth_session")
 public class AuthSession {
@@ -16,10 +18,13 @@ public class AuthSession {
     @Column(name = "user_id", nullable = false, length = 64)
     private String userId;
     @Column(name = "created_at", nullable = false)
+    @Type(type = "com.liushao.user.pojo.UtcDateTimeType")
     private LocalDateTime createdAt;
     @Column(name = "expires_at", nullable = false)
+    @Type(type = "com.liushao.user.pojo.UtcDateTimeType")
     private LocalDateTime expiresAt;
     @Column(name = "revoked_at")
+    @Type(type = "com.liushao.user.pojo.UtcDateTimeType")
     private LocalDateTime revokedAt;
 
     protected AuthSession() {

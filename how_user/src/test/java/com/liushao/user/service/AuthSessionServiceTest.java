@@ -66,6 +66,9 @@ class AuthSessionServiceTest {
         assertArrayEquals(MessageDigest.getInstance("SHA-256").digest(original.getRefreshToken()
                 .getBytes(StandardCharsets.US_ASCII)), stored);
         assertFalse(original.toString().contains(original.getRefreshToken()));
+        assertEquals(original.getExpiresAt(), jdbc.queryForObject(
+            "SELECT expires_at FROM tb_auth_session WHERE id = ?", java.time.LocalDateTime.class,
+            original.getSessionId()));
         AuthSessionService.Grant rotated = service.rotate(original.getRefreshToken()).orElseThrow();
         assertEquals(original.getSessionId(), rotated.getSessionId());
         assertEquals(original.getExpiresAt(), rotated.getExpiresAt());
