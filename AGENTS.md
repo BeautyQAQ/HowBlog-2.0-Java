@@ -105,6 +105,37 @@ com.liushao.<module>/
 - 可预期的参数或业务异常应交由模块现有的 `BaseExceptionHandler` 统一处理；避免在控制器中吞掉异常或返回未封装的错误对象。
 - 参数新增或修改时，应使用 Bean Validation 或明确的业务校验，并覆盖空值、边界值和不存在的资源。
 
+## 前后端接口契约与变更同步
+
+前端接口的当前事实来源是：
+
+- `docs/frontend-api.md`：当前 REST、WebSocket 契约、请求响应字段和已知限制；
+- `docs/frontend-api-changelog.md`：追加式变更记录；
+- `docs/frontend-api-status.json`：供前端 agent 快速判断是否有新变更的机器可读状态指针。
+
+凡是下列内容发生变化，都必须在同一个变更中同步更新上述三个文件：
+
+- 新增、修改或删除 REST 路由、HTTP 方法、路径参数或查询参数；
+- 修改请求体、响应体、实体字段、分页结构、业务状态码或错误行为；
+- 修改认证方式、跨域约束、服务端口或网关前缀；
+- 新增、修改或删除 WebSocket 连接参数、客户端消息或服务端事件；
+- 修复会改变前端可观察行为的后端缺陷。
+
+接口变更必须遵循以下步骤：
+
+1. 修改代码前先阅读当前接口契约和状态文件，确认当前 `revision`。
+2. 在实现代码的同时更新 `docs/frontend-api.md`，不得只更新 README 或注释。
+3. 在 `docs/frontend-api-changelog.md` 末尾追加一条记录，写明日期、变更类型、破坏性、影响路径和前端动作。
+4. 将 `docs/frontend-api-status.json` 的 `revision` 递增，更新 `updatedAt`、`latestChangeId`、`latestChangeType`、`breaking`、`requiresFrontendAction` 和受影响范围。
+5. 运行与变更范围匹配的编译或测试，并确认文档没有记录尚未实现或无法启动的接口。
+6. 在交付说明中明确本次 API revision 和文档发布位置。
+
+`revision` 是单调递增的同步编号；任何接口契约变更都递增 1。`contractVersion` 使用类似 SemVer 的规则：破坏性变更递增主版本，兼容性新增递增次版本，兼容性修正递增修订版本。变更记录只能追加，当前契约文档始终描述最新行为。
+
+前端 agent 没有后端仓库权限时，不得把 Git diff 作为同步机制。后端需要把这三个文件一起发布到前端 agent 可访问的共享位置，例如前端仓库、共享文档仓库、CI 构建产物或内部只读 URL。前端 agent 的固定读取流程是：先读 `frontend-api-status.json`，比较本地已处理的 revision；发现 revision 变大后，读取 changelog 对应条目，再读取 `frontend-api.md` 的当前契约并保存新的 revision。如果没有任何共享文件、构建产物或 URL，前端 agent 无法知道后端发生了变化，必须先建立发布渠道。
+
+当前基线为 revision `1`，详见 `docs/frontend-api-changelog.md`。
+
 ### 数据访问
 
 - MySQL 持久化使用 Spring Data JPA；实体使用 `javax.persistence`，Repository 继续沿用当前 DAO 命名。

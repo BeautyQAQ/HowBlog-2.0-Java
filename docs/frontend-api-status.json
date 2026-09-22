@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "1.0.0",
+  "revision": 1,
+  "updatedAt": "2026-09-22",
+  "latestChangeId": "API-20260922-001",
+  "latestChangeType": "baseline",
+  "breaking": false,
+  "requiresFrontendAction": true,
+  "changedAreas": [
+    "user-rest",
+    "label-rest",
+    "article-rest",
+    "comment-rest",
+    "websocket-im"
+  ],
+  "contractFile": "docs/frontend-api.md",
+  "changelogFile": "docs/frontend-api-changelog.md",
+  "consumerProtocol": {
+    "firstRead": "Read this status file before implementing or reviewing API usage.",
+    "changeCheck": "A larger revision means that the consumer must read the changelog and current contract.",
+    "localState": "The consumer should persist the last processed revision in its own project or agent state.",
+    "distribution": "Publish this file together with the contract and changelog through a shared read-only path, artifact, or URL."
+  }
+}
