@@ -5,7 +5,7 @@
 本方案用于把项目从“能够编译、可以进行基础接口对接”的开发状态，推进到“身份可信、行为可验证、配置可复现、可以持续迭代”的博客后端。
 
 - 建立日期：2026-09-22
-- 当前接口契约 revision：6（工作区待推送）
+- 当前接口契约 revision：6（已推送）
 - 当前契约版本：4.0.0
 - 适用范围：`how_common`、`how_user`、`how_base`、`how_article` 及配套文档
 - 配套进度：见 [progress.md](progress.md)
@@ -19,9 +19,9 @@
 - 已移除 MongoDB、MyBatis-Plus 和外部环信依赖。
 - `how_user` 已具备轻量 Spring WebSocket IM。
 - 评论按文章查询路径已固定为 `GET /comment/article/{articleId}`，解决了与按评论 ID 查询的映射冲突。
-- REST、WebSocket、数据模型和已知限制已形成前端接口契约；远端 revision 5，工作区 revision 6 待推送，用户确认前端可直接读取后端 GitHub 仓库的 `docs/`。
+- REST、WebSocket、数据模型和已知限制已形成前端接口契约；远端 revision 6，用户确认前端可直接读取后端 GitHub 仓库的 `docs/`。
 - AUTH-01 至 AUTH-07 已完成本轮范围：JWT、密码脱敏、作者归属、用户级点赞、WebSocket 鉴权、统一异常及基础输入校验。
-- JDK 21 下全模块 `mvn clean test` 通过，83 项通过、1 项真实 MySQL 测试默认跳过；包含 63 项 MVC 和 1 项 H2 JPA 测试。AUTH-08A 已显式完成基础 MySQL 事务验证，尚未完成业务全链路真实存储联调。
+- JDK 21 下全模块 `mvn clean test` 通过，92 项通过、1 项真实 MySQL 测试默认跳过；包含 63 项 MVC、1 项角色 H2 JPA 和 9 项会话核心事务测试。AUTH-08A 已完成基础 MySQL SQL 验证，新服务及业务全链路真实存储联调仍未完成。
 
 ### 当前主要问题
 
@@ -229,3 +229,4 @@
 - 用户已选择数据库角色、刷新 token 和服务端退出；详细实施边界见 [auth-session-design.md](auth-session-design.md)。
 - AUTH-08A 已新增附加表迁移，并在用户授权的独立 MySQL 8 验证重复执行、事务回滚和并发单次消费；不修改存量用户表或自动授予管理员。
 - AUTH-08B 已完成数据库角色读取、标签管理员授权及运维说明；对应 revision 6。下一切片 AUTH-09 接入持久化会话、刷新轮换和 REST/IM 撤销，未实现前不更新当前接口契约为这些新能力。
+- AUTH-09A 的内部会话核心已完成 H2 事务验证，尚未接入登录和公开接口；下一步先验收 MySQL 服务事务，再接通 JWT 会话 ID、REST/IM 会话校验和刷新/退出路由。
