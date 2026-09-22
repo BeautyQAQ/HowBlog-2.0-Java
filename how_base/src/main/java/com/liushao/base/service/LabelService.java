@@ -1,25 +1,40 @@
 package com.liushao.base.service;
 
 import com.liushao.base.dao.LabelDao;
+import com.liushao.base.dao.UserRoleDao;
+import com.liushao.auth.CurrentUserContext;
 import com.liushao.base.pojo.Label;
 import com.liushao.util.IdWorker;
 import com.liushao.web.ResourceNotFoundException;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.liushao.web.ForbiddenException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
 public class LabelService {
-    @Autowired
-    private LabelDao labelDao;
-    @Autowired
-    private IdWorker idWorker;
+    private final LabelDao labelDao;
+    private final IdWorker idWorker;
+    private final UserRoleDao userRoleDao;
+
+    public LabelService(LabelDao labelDao, IdWorker idWorker, UserRoleDao userRoleDao) {
+        this.labelDao = labelDao;
+        this.idWorker = idWorker;
+        this.userRoleDao = userRoleDao;
+    }
+
+    private void requireAdministrator() {
+        String userId = CurrentUserContext.get().orElseThrow(ForbiddenException::new).getUserId();
+        if (userRoleDao.countAdministrator(userId) == 0) {
+            throw new ForbiddenException();
+        }
+    }
 
     /**
      * 保存一个标签
      */
     public void saveLabel(Label label){
+        requireAdministrator();
         //设置ID
         label.setId(idWorker.nextId()+"");
         labelDao.save(label);
@@ -28,6 +43,7 @@ public class LabelService {
      * 更新一个标签
      */
     public void updateLabel(Label label){
+        requireAdministrator();
         Label existing = labelDao.findById(label.getId()).orElseThrow(ResourceNotFoundException::new);
             if (label.getLabelname() != null) existing.setLabelname(label.getLabelname());
             if (label.getState() != null) existing.setState(label.getState());
@@ -41,6 +57,7 @@ public class LabelService {
      * 删除一个标签
      */
     public void deleteLabelById(String id){
+        requireAdministrator();
         Label existing = labelDao.findById(id).orElseThrow(ResourceNotFoundException::new);
         labelDao.delete(existing);
     }

@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.liushao.auth.CurrentUserContext;
 import com.liushao.auth.JwtTokenService;
 import com.liushao.base.dao.LabelDao;
+import com.liushao.base.dao.UserRoleDao;
 import com.liushao.base.pojo.Label;
 import com.liushao.base.service.LabelService;
 
@@ -36,6 +37,7 @@ class LabelControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private JwtTokenService tokens;
     @MockBean private LabelDao labelDao;
+        @MockBean private UserRoleDao userRoleDao;
 
     @ParameterizedTest
     @CsvSource({"POST,/label", "PUT,/label/one", "DELETE,/label/one"})
@@ -59,6 +61,7 @@ class LabelControllerTest {
 
     @Test
     void createsLabelAndSupportsPartialUpdate() throws Exception {
+                when(userRoleDao.countAdministrator("author")).thenReturn(1L);
         Label existing = new Label();
         existing.setId("one");
         existing.setLabelname("Java");
@@ -76,6 +79,9 @@ class LabelControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"GET", "PUT", "DELETE"})
     void returnsNotFoundInsteadOfFalseSuccess(String method) throws Exception {
+                if (!"GET".equals(method)) {
+                        when(userRoleDao.countAdministrator("author")).thenReturn(1L);
+                }
         mvc.perform(request(HttpMethod.valueOf(method), "/label/missing").header("Authorization", authorization())
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001))
@@ -86,6 +92,7 @@ class LabelControllerTest {
 
     @Test
     void allowsAuthenticatedDeleteAndPublicRead() throws Exception {
+                when(userRoleDao.countAdministrator("author")).thenReturn(1L);
         Label label = new Label();
         label.setId("one");
         when(labelDao.findById("one")).thenReturn(Optional.of(label));
@@ -108,4 +115,50 @@ class LabelControllerTest {
     private String authorization() {
         return "Bearer " + tokens.issueToken("author", "test-user");
     }
+
+        @ParameterizedTest
+        @CsvSource({"POST,/label", "PUT,/label/one", "DELETE,/label/one"})
+        void rejectsOrdinaryUsersWithoutTouchingLabels(String method, String path) throws Exception {
+                mvc.perform(request(HttpMethod.valueOf(method), path).header("Authorization", authorization())
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"labelname\":\"Java\",\"role\":\"ADMIN\",\"userid\":\"admin\"}"))
+                                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(20003))
+                                .andExpect(jsonPath("$.message").value("无权执行此操作"));
+                verify(userRoleDao).countAdministrator("author");
+                verifyNoInteractions(labelDao);
+                assertTrue(CurrentUserContext.get().isEmpty());
+        }
+
+        @ParameterizedTest
+        @CsvSource({"POST,/label", "PUT,/label/one", "DELETE,/label/one"})
+        void failsClosedWhenRolesCannotBeRead(String method, String path) throws Exception {
+                when(userRoleDao.countAdministrator("author")).thenThrow(new IllegalStateException("internal role storage detail"));
+                mvc.perform(request(HttpMethod.valueOf(method), path).header("Authorization", authorization())
+                                                .contentType(MediaType.APPLICATION_JSON).content("{\"labelname\":\"Java\"}"))
+                                .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value(20001))
+                                .andExpect(jsonPath("$.message").value("服务暂时不可用，请稍后重试"));
+                verifyNoInteractions(labelDao);
+                assertTrue(CurrentUserContext.get().isEmpty());
+        }
+
+        @Test
+        void rechecksDatabaseRoleWithTheSameTokenAfterDemotion() throws Exception {
+                when(userRoleDao.countAdministrator("author")).thenReturn(1L, 0L);
+                String token = authorization();
+                mvc.perform(post("/label").header("Authorization", token).contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"labelname\":\"Java\"}"))
+                                .andExpect(status().isOk());
+                mvc.perform(post("/label").header("Authorization", token).contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"labelname\":\"Java\"}"))
+                                .andExpect(status().isForbidden());
+                verify(userRoleDao, times(2)).countAdministrator("author");
+                verify(labelDao, times(1)).save(any());
+        }
+
+        @Test
+        void publicReadsDoNotQueryRoles() throws Exception {
+                mvc.perform(get("/label")).andExpect(status().isOk());
+                mvc.perform(get("/label/missing")).andExpect(status().isNotFound());
+                verifyNoInteractions(userRoleDao);
+        }
 }

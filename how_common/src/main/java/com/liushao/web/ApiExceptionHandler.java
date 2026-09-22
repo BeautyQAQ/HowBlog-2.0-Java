@@ -30,6 +30,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(new Result(false, StatusCode.ERROR, "资源不存在"));
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<Result> forbidden(ForbiddenException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new Result(false, StatusCode.ACCESSERROR, "无权执行此操作"));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<Result> invalidRequest(InvalidRequestException exception) {
         return ResponseEntity.badRequest().body(new Result(false, StatusCode.ERROR, "请求格式或参数不正确"));

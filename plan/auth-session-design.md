@@ -60,3 +60,10 @@
 - 通过环境变量 `HOW_AUTH_TEST_CONFIG` 指定已授权的本机 YAML 配置路径后，执行 `mvn -pl how_user -am test -Dtest=AuthSchemaIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false`；不设置该变量时默认跳过，普通测试不会访问数据库。
 - 已创建 `tb_user_role`、`tb_auth_session`、`tb_auth_refresh_token`。每次成功运行保留一组随机测试会话/摘要，结束时撤销并过期；角色写入回滚，不保留管理员授权，不删除任何已有数据。
 - 这只验证基础 SQL 事务原语，不证明未来服务实现、重放撤销、退出/刷新竞争或多实例 IM 行为。未验证全新空库初始化或同名异构表升级，不能据此自动上线。
+
+## AUTH-08B 验收记录
+
+- 2026-09-22：标签写入服务层每次查询数据库 `ADMIN`，并关联用户存在性；无权限返回 HTTP 403/20003，角色查询异常返回脱敏 500/20001，不访问标签存储。公开查询不读取角色。
+- 角色不放入 JWT 或缓存；同一 token 降权后下一次请求重新查询数据库。文章/评论仍仅要求作者本人，无管理员代操作能力。
+- 标签 MVC 22 项及 H2 JPA Repository 1 项通过；默认全量 83 项通过、1 项外部 MySQL 测试跳过。未执行真实管理员授权或基础服务真实 MySQL 启动验收。
+- API revision 6 / 4.0.0 已同步工作区，尚待推送。运维步骤见 `docs/admin-operations.md`。刷新/退出与三个服务的持久化会话校验仍是 AUTH-09 计划，不是本轮已实现行为。

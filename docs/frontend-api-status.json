@@ -1,19 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "3.0.0",
-  "revision": 5,
+  "contractVersion": "4.0.0",
+  "revision": 6,
   "updatedAt": "2026-09-22",
-  "latestChangeId": "API-20260922-005",
+  "latestChangeId": "API-20260922-006",
   "latestChangeType": "protocol",
   "breaking": true,
   "requiresFrontendAction": true,
   "changedAreas": [
-    "rest-error-responses",
-    "user-rest-errors",
-    "label-rest-validation",
-    "article-rest-validation-pagination",
-    "comment-rest-validation",
-    "rest-resource-not-found"
+    "label-rest-admin-authorization",
+    "rest-forbidden-response"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",
