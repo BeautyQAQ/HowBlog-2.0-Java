@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "1.0.0",
-  "revision": 1,
+  "contractVersion": "1.1.0",
+  "revision": 2,
   "updatedAt": "2026-09-22",
-  "latestChangeId": "API-20260922-001",
-  "latestChangeType": "baseline",
+  "latestChangeId": "API-20260922-002",
+  "latestChangeType": "fix",
   "breaking": false,
   "requiresFrontendAction": true,
   "changedAreas": [

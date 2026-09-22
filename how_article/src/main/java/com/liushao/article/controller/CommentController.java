@@ -62,7 +62,7 @@ public class CommentController {
     }
 
     //根据文章id查询评论列表
-    @RequestMapping(value = "{articleId}", method = RequestMethod.GET)
+    @RequestMapping(value = "article/{articleId}", method = RequestMethod.GET)
     public Result findByarticleId(@PathVariable String articleId) {
         List<Comment> list = commentService.findByarticleId(articleId);
         return new Result(true, StatusCode.OK, "查询成功", list);

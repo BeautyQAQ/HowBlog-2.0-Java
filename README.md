@@ -151,12 +151,13 @@ mvn -pl how_user spring-boot:run
 | `POST` | `/article/search/{page}/{size}` | 分页条件查询文章 |
 | `GET` | `/comment` | 查询全部评论 |
 | `GET` | `/comment/{id}` | 按 ID 查询评论 |
+| `GET` | `/comment/article/{articleId}` | 按文章 ID 查询评论 |
 | `POST` | `/comment` | 新增评论 |
 | `PUT` | `/comment/{id}` | 修改评论 |
 | `DELETE` | `/comment/{id}` | 删除评论 |
 | `PUT` | `/comment/thumbup/{id}` | 评论点赞 |
 
-评论 Controller 中还实现了按文章 ID 查询评论的方法，但它与按评论 ID 查询使用了相同的 `GET /comment/{value}` 路径，当前代码无法仅靠 URL 区分这两个语义，调用前需要结合实际服务逻辑确认行为。
+评论 Controller 同时提供按评论 ID和按文章 ID查询评论：前者使用 `GET /comment/{id}`，后者使用 `GET /comment/article/{articleId}`。
 
 ## 即时通讯
 

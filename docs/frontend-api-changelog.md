@@ -28,3 +28,13 @@
 - 前端动作：首次接入时读取 [frontend-api.md](frontend-api.md)，保存已处理 revision `1`。
 - 已知阻塞项：`GET /comment/{id}` 与按文章查询评论的 `GET /comment/{articleId}` 是冲突映射，文章维度评论查询暂不可作为稳定接口使用。
 - 发布状态：已发布
+
+## Revision 2 - API-20260922-002
+
+- 日期：2026-09-22
+- 类型：修复
+- 破坏性变更：否
+- 影响范围：文章服务 `GET /comment/article/{articleId}`
+- 变更内容：将按文章 ID 查询评论的路径从冲突的变量模板改为明确的 `/comment/article/{articleId}`；按评论 ID 查询继续使用 `GET /comment/{id}`。
+- 前端动作：将文章评论列表请求切换为 `GET /comment/article/{articleId}`，并保存已处理 revision `2`。
+- 发布状态：已发布。

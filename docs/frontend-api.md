@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`1.0.0`
-> 当前同步 revision：`1`
+> 当前契约版本：`1.1.0`
+> 当前同步 revision：`2`
 > 最后更新：`2026-09-22`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -312,6 +312,14 @@ Content-Type: application/json
 
 查询全部评论。成功时 `data` 为 `Comment[]`。
 
+### GET `/comment/{id}`
+
+按评论 ID 查询评论。不存在时 `data` 为 `null`，当前仍返回 `flag: true`。
+
+### GET `/comment/article/{articleId}`
+
+按文章 ID 查询评论列表，按发布时间倒序返回。成功时 `data` 为 `Comment[]`。
+
 ### POST `/comment`
 
 新增评论。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`。请求体通常包含 `articleid`、`content`、`userid` 和可选的 `parentid`。
@@ -343,14 +351,7 @@ Content-Type: application/json
 - 同一服务进程中再次点赞通常返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
 - 前端不能把当前固定用户 ID 逻辑当成真实鉴权。
 
-### 评论按 ID/文章 ID 查询的当前阻塞项
-
-代码同时声明了以下两个意图相同的路径：
-
-- `GET /comment/{id}`：按评论 ID 查询；
-- `GET /comment/{articleId}`：按文章 ID 查询评论列表。
-
-它们在 Spring MVC 中是同一个路由模板，无法仅靠变量名区分，当前属于冲突映射。不要在前端依赖“通过同一个路径自动判断这是评论 ID 还是文章 ID”的行为；文章维度的评论查询在后端修复并更新契约 revision 前视为不可用。修复后必须在变更日志中给出新的、明确区分的路径。
+按评论 ID和按文章 ID 查询使用不同的路径模板，前端应使用 `/comment/{id}` 查询单条评论，使用 `/comment/article/{articleId}` 查询文章评论列表；不要通过同一个路径推断查询语义。
 
 ## WebSocket 即时通讯（9008）
 
