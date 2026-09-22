@@ -3,8 +3,8 @@
 ## 1. 当前状态
 
 - 更新时间：2026-09-22
-- 当前阶段：Phase 1 身份认证与安全边界进行中，AUTH-01 至 AUTH-07 已完成
-- 当前接口契约：revision `5`，contract version `3.0.0`；仓库文档已同步，外部发布渠道待确认
+- 当前阶段：Phase 1 身份认证与安全边界进行中，AUTH-01 至 AUTH-07 已完成；AUTH-08A 设计、附加表与基础 MySQL 事务验收完成
+- 当前接口契约：revision `5`，contract version `3.0.0`；已随提交 `d8e076e` 推送到 `origin/master`，用户确认前端可读取该仓库的 `docs/`
 - 总体判断：登录、REST 写接口和 WebSocket 已接入 JWT；刷新/撤销、角色授权、跨存储一致性和生产配置仍待推进
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
@@ -51,6 +51,9 @@
 - [x] `AUTH-05` 将 WebSocket 身份从 URL 参数切换到认证上下文。
 - [x] `AUTH-06` 同步接口契约至 revision `4`，并发布前端迁移说明。
 - [x] `AUTH-07` 统一异常响应、基础输入校验和受保护接口 MVC 切片测试；同步 revision `5`。
+- [x] `AUTH-08A` 数据库角色与持久化会话设计、附加表迁移和基础 MySQL 事务验收，见 [auth-session-design.md](auth-session-design.md)；运行功能尚未接入。
+- [ ] `AUTH-08B` 数据库管理员角色读取、标签管理授权和运维引导。
+- [ ] `AUTH-09` 刷新令牌轮换、重放检测、服务端退出及 REST/IM 会话撤销。
 
 ### 当前明确风险
 
@@ -63,7 +66,8 @@
 - [ ] 标签写接口只有认证校验，尚无管理员角色模型。
 - [x] 三个服务控制器异常已统一脱敏，坏 JSON/参数错误、缺失资源及未知异常返回明确 HTTP 状态。
 - [ ] 最大文本长度、状态枚举、评论关联文章/父评论存在性校验仍未全面覆盖。
-- [!] revision `5` 文档位于本仓库 `docs/`，前端共享发布渠道尚未确认。
+- [x] 用户确认前端可直接读取后端 GitHub 仓库；revision `5` 已随 AUTH-07 推送，前端是否已消费仍需前端确认。
+- [x] 用户已确认独立 MySQL 8 配置和建表/测试写入授权；认证表与基础事务测试通过。不得将该次授权扩展为任意业务数据修改。
 - [ ] Redis 与 MySQL 点赞提交失败后的最终一致性补偿策略尚未完成。
 - [ ] JWT secret、数据库和 Redis 配置仍需进一步完成环境变量化和敏感信息清理。
 
@@ -81,6 +85,7 @@
 | AUTH-05 | 2026-09-22 | 2026-09-22 | `JwtHandshakeInterceptorTest`；2 tests passed | 已完成 |
 | AUTH-06 | 2026-09-22 | 2026-09-22 | API revision 4、破坏性认证协议、契约和 changelog 已同步 | 已完成 |
 | AUTH-07 | 2026-09-22 | 2026-09-22 | JDK 21 下 `mvn clean test`；74 tests passed；源码诊断与 `git diff --check` 通过 | 已完成本轮范围；未连接真实 MySQL/Redis |
+| AUTH-08A | 2026-09-22 | 2026-09-22 | 显式配置 `HOW_AUTH_TEST_CONFIG` 后运行 `AuthSchemaIntegrationTest`；真实 MySQL 8 验收通过 | 重复建表、回滚及并发单次消费通过；服务实现尚未接入 |
 
 ## 6. 变更记录
 
@@ -99,6 +104,9 @@
 - 完成 AUTH-07：共享异常处理、基础 Bean Validation、分页限制和缺失资源处理；保留文章/评论作者权限与登录缺少凭据的原有响应。
 - 新增 55 项 MVC 切片测试：文章/评论 33 项、标签 14 项、登录 8 项。使用真实 Controller、Service、JWT 和 MVC 配置，模拟 DAO/Redis；全量 74 项测试无失败、错误或跳过。
 - 同步 API revision `5`、contract version `3.0.0`；前端需适配 400/404/500 和新校验边界，外部发布仍待共享渠道确认。
+- 提交并推送 AUTH-07：`d8e076e` 已到 `origin/master`。用户随后确认数据库角色、刷新 token、服务端退出和前端直接读取本仓库文档。
+- 启动 AUTH-08A：新增角色/会话/刷新凭据设计和仅新增表的迁移草案；未执行 DDL、未授予管理员、未改变运行时行为，因此接口 revision 仍为 `5`。
+- 用户随后授权独立 MySQL 8 验收，已创建三张认证表并验证重复执行、角色写入回滚和并发凭据单次消费；保留已撤销/过期的专用测试记录，无真实管理员授权。刷新与退出接口仍未实现，API revision 不变。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -111,6 +119,6 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 确认标签管理员权限模型与刷新/退出/撤销的上线要求，并建立 revision `5` 的前端共享发布渠道。
+1. 推进 AUTH-08B：读取数据库角色、保护标签写接口并提供初始管理员运维说明；随后实现 AUTH-09 刷新 token 和服务端退出。遵循 [auth-session-design.md](auth-session-design.md)，不自动授予管理员或扩展数据库操作范围。
 2. 在 Phase 2 设计 Redis/MySQL 点赞的一致性补偿，并补充 Testcontainers 或等价集成环境。
 3. 在 Phase 3 完成数据库、Redis、JWT secret、CORS 和 Docker Compose 的环境化配置。

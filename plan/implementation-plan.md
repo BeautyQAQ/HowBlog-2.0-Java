@@ -19,7 +19,7 @@
 - 已移除 MongoDB、MyBatis-Plus 和外部环信依赖。
 - `how_user` 已具备轻量 Spring WebSocket IM。
 - 评论按文章查询路径已固定为 `GET /comment/article/{articleId}`，解决了与按评论 ID 查询的映射冲突。
-- REST、WebSocket、数据模型和已知限制已形成前端接口契约，当前 revision 为 5；文档包位于 `docs/`，前端共享发布渠道待确认。
+- REST、WebSocket、数据模型和已知限制已形成前端接口契约，当前 revision 为 5；文档包已推送至后端 GitHub 仓库，用户确认前端可直接读取 `docs/`。
 - AUTH-01 至 AUTH-07 已完成本轮范围：JWT、密码脱敏、作者归属、用户级点赞、WebSocket 鉴权、统一异常及基础输入校验。
 - JDK 21 下全模块 `mvn clean test` 通过，共 74 项测试，其中 55 项为真实 MVC/Service 配合模拟 DAO/Redis 的切片测试；尚未完成真实存储联调。
 
@@ -223,3 +223,9 @@
 - 文章、评论、标签写接口的角色模型，是否需要管理员角色。
 - Redis 点赞记录的过期策略，以及数据库更新失败时的补偿策略。
 - WebSocket 旧的 `?user=` 身份入口已移除；生产环境 token 传递方式及访问日志脱敏策略待确定。
+
+### 9.1 后续确认与推进
+
+- 用户已选择数据库角色、刷新 token 和服务端退出；详细实施边界见 [auth-session-design.md](auth-session-design.md)。
+- AUTH-08A 已新增附加表迁移，并在用户授权的独立 MySQL 8 验证重复执行、事务回滚和并发单次消费；不修改存量用户表或自动授予管理员。
+- 下一切片 AUTH-08B 实现角色读取与标签管理员权限；AUTH-09 再接入持久化会话、刷新轮换和 REST/IM 撤销。未实现前不更新当前接口契约为这些新能力。
