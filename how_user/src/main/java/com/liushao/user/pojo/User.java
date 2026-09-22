@@ -1,32 +1,40 @@
 package com.liushao.user.pojo;
 
-import com.baomidou.mybatisplus.annotations.TableId;
-import com.baomidou.mybatisplus.annotations.TableName;
-import com.baomidou.mybatisplus.enums.IdType;
-
 import java.io.Serializable;
 import java.util.Date;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
+import javax.persistence.Temporal;
+import javax.persistence.TemporalType;
 
 /**
  * @author huangshen
  */
-@TableName("tb_user")
+@Entity
+@Table(name = "tb_user")
 public class User implements Serializable {
 
-    @TableId(type = IdType.INPUT)
+    @Id
+    @Column(name = "id")
     private String id;
     private String mobile;
     private String password;
     private String nickname;
     private String sex;
+    @Temporal(TemporalType.TIMESTAMP)
     private Date birthday;
     private String avatar;
     private String email;
     /**
      * 注册日期
      */
+    @Temporal(TemporalType.TIMESTAMP)
     private Date regdate;
+    @Temporal(TemporalType.TIMESTAMP)
     private Date updatedate;
+    @Temporal(TemporalType.TIMESTAMP)
     private Date lastdate;
     /**
      * 在线时长（分钟）

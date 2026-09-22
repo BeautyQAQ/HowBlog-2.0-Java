@@ -1,12 +1,12 @@
 package com.liushao.article.controller;
 
-import com.baomidou.mybatisplus.plugins.Page;
 import com.liushao.article.pojo.Article;
 import com.liushao.article.service.ArticleService;
 import com.liushao.entity.PageResult;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -68,7 +68,7 @@ public class ArticleController {
      */
     @RequestMapping(value="search/{page}/{size}", method = RequestMethod.POST)
     public Result search(@RequestBody Map map, @PathVariable int page, @PathVariable int size) {
-        Page page1 = articleService.search(map, page, size);
-        return new Result(true, StatusCode.OK, "查询成功", new PageResult(page1.getTotal(), page1.getRecords()));
+        Page<Article> pageResult = articleService.search(map, page, size);
+        return new Result(true, StatusCode.OK, "查询成功", new PageResult<>(pageResult.getTotalElements(), pageResult.getContent()));
     }
 }

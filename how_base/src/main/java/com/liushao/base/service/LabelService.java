@@ -21,20 +21,29 @@ public class LabelService {
     public void saveLabel(Label label){
         //设置ID
         label.setId(idWorker.nextId()+"");
-        labelDao.insert(label);
+        labelDao.save(label);
     }
     /**
      * 更新一个标签
      */
     public void updateLabel(Label label){
-        labelDao.updateById(label);
+        labelDao.findById(label.getId()).ifPresent(existing -> {
+            if (label.getLabelname() != null) existing.setLabelname(label.getLabelname());
+            if (label.getState() != null) existing.setState(label.getState());
+            if (label.getCount() != null) existing.setCount(label.getCount());
+            if (label.getFans() != null) existing.setFans(label.getFans());
+            if (label.getRecommend() != null) existing.setRecommend(label.getRecommend());
+            labelDao.save(existing);
+        });
     }
 
     /**
      * 删除一个标签
      */
     public void deleteLabelById(String id){
-        labelDao.deleteById(id);
+        if (labelDao.existsById(id)) {
+            labelDao.deleteById(id);
+        }
     }
 
     /**
@@ -43,7 +52,7 @@ public class LabelService {
      * @return
      */
     public List<Label> findLabelList() {
-        return labelDao.selectList(null);
+        return labelDao.findAll();
     }
 
     /**
@@ -52,7 +61,7 @@ public class LabelService {
      * @return
      */
     public Label findLabelById(String id) {
-        return labelDao.selectById(id);
+        return labelDao.findById(id).orElse(null);
     }
 
 }

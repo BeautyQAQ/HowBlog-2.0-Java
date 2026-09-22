@@ -1,10 +1,10 @@
 package com.liushao.base.dao;
 
-import com.baomidou.mybatisplus.mapper.BaseMapper;
 import com.liushao.base.pojo.Label;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
  * @author huangshen
  */
-public interface LabelDao extends BaseMapper<Label>  {
+public interface LabelDao extends JpaRepository<Label, String> {
 }

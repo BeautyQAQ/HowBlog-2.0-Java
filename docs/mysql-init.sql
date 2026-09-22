@@ -1,20 +1,12 @@
 -- HowBlog 2.0 MySQL 初始化脚本
--- 适用于 MySQL 8.x。执行后会创建 how_user、how_base、how_article 及其业务表。
+-- 适用于 MySQL 8.x。执行后会创建 how-blog-smaill 及其业务表。
 -- 重复执行不会删除现有数据或表结构。
 
-CREATE DATABASE IF NOT EXISTS `how_user`
+CREATE DATABASE IF NOT EXISTS `how-blog-smaill`
   DEFAULT CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-CREATE DATABASE IF NOT EXISTS `how_base`
-  DEFAULT CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-CREATE DATABASE IF NOT EXISTS `how_article`
-  DEFAULT CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE `how_user`;
+USE `how-blog-smaill`;
 
 CREATE TABLE IF NOT EXISTS `tb_user` (
   `id` VARCHAR(64) NOT NULL COMMENT '用户 ID，由应用生成',
@@ -37,8 +29,6 @@ CREATE TABLE IF NOT EXISTS `tb_user` (
   KEY `idx_tb_user_mobile` (`mobile`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
-USE `how_base`;
-
 CREATE TABLE IF NOT EXISTS `tb_label` (
   `id` VARCHAR(64) NOT NULL COMMENT '标签 ID，由应用生成',
   `labelname` VARCHAR(100) NOT NULL COMMENT '标签名称',
@@ -49,8 +39,6 @@ CREATE TABLE IF NOT EXISTS `tb_label` (
   PRIMARY KEY (`id`),
   KEY `idx_tb_label_labelname` (`labelname`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签表';
-
-USE `how_article`;
 
 CREATE TABLE IF NOT EXISTS `tb_article` (
   `id` VARCHAR(64) NOT NULL COMMENT '文章 ID，由应用生成',

@@ -1,25 +1,32 @@
 package com.liushao.article.pojo;
 
-import com.baomidou.mybatisplus.annotations.TableId;
-import com.baomidou.mybatisplus.annotations.TableName;
-import com.baomidou.mybatisplus.enums.IdType;
-
 import java.io.Serializable;
 import java.util.Date;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Lob;
+import javax.persistence.Table;
+import javax.persistence.Temporal;
+import javax.persistence.TemporalType;
 
 
 /**
  * 评论
  * @author huangshen
  */
-@TableName("tb_comment")
+@Entity
+@Table(name = "tb_comment")
 public class Comment implements Serializable {
-    @TableId(value = "id", type = IdType.INPUT)
+    @Id
+    @Column(name = "id")
     private String _id;
     private String articleid;
+    @Lob
     private String content;
     private String userid;
     private String parentid;
+    @Temporal(TemporalType.TIMESTAMP)
     private Date publishdate;
     private Integer thumbup;
 

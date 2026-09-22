@@ -1,15 +1,18 @@
 package com.liushao.base.pojo;
 
-import com.baomidou.mybatisplus.annotations.TableId;
-import com.baomidou.mybatisplus.annotations.TableName;
-import com.baomidou.mybatisplus.enums.IdType;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
 
 /**
  * @author huangshen
  */
-@TableName("tb_label")
+@Entity
+@Table(name = "tb_label")
 public class Label {
-    @TableId(type = IdType.INPUT)
+    @Id
+    @Column(name = "id")
     private String id;//OID编号
     private String labelname;//标签名称
     private String state;//状态

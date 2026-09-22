@@ -1,20 +1,20 @@
 package com.liushao.article.dao;
 
-import com.baomidou.mybatisplus.mapper.BaseMapper;
 import com.liushao.article.pojo.Comment;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
 /**
  * @author huangshen
  */
-public interface CommentDao extends BaseMapper<Comment> {
-    @Select("SELECT * FROM tb_comment WHERE articleid = #{articleId} ORDER BY publishdate DESC")
-    List<Comment> selectByArticleid(@Param("articleId") String articleId);
+public interface CommentDao extends JpaRepository<Comment, String> {
+    List<Comment> findByArticleidOrderByPublishdateDesc(String articleId);
 
-    @Update("UPDATE tb_comment SET thumbup = thumbup + 1 WHERE id = #{id}")
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE tb_comment SET thumbup = thumbup + 1 WHERE id = :id", nativeQuery = true)
     int incrementThumbup(@Param("id") String id);
 }

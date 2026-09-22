@@ -1,27 +1,35 @@
 package com.liushao.article.pojo;
 
-import com.baomidou.mybatisplus.annotations.TableId;
-import com.baomidou.mybatisplus.annotations.TableName;
-import com.baomidou.mybatisplus.enums.IdType;
-
 import java.io.Serializable;
 import java.util.Date;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Lob;
+import javax.persistence.Table;
+import javax.persistence.Temporal;
+import javax.persistence.TemporalType;
 
 /**
  * @author huangshen
  */
-@TableName("tb_article")
+@Entity
+@Table(name = "tb_article")
 public class Article implements Serializable {
 
-    @TableId(type = IdType.INPUT)
+    @Id
+    @Column(name = "id")
     private String id;//ID
 
     private String columnid;    //专栏ID
     private String userid;      //用户ID
     private String title;       //标题
+    @Lob
     private String content;     //文章正文
     private String image;       //文章封面
+    @Temporal(TemporalType.TIMESTAMP)
     private Date createtime;    //发表日期
+    @Temporal(TemporalType.TIMESTAMP)
     private Date updatetime;    //修改日期
     private String ispublic;    //是否公开
     private String istop;       //是否置顶

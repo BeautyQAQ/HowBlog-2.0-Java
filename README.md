@@ -17,18 +17,18 @@ HowBlog-2.0-Java/
 
 | 模块 | 启动类 | 默认端口 | 数据存储 |
 | --- | --- | --- | --- |
-| `how_user` | `com.liushao.user.UserApplication` | `9008` | MySQL `how_user` |
-| `how_base` | `com.liushao.base.BaseApplication` | `9001` | MySQL `how_base` |
-| `how_article` | `com.liushao.article.ArticleApplication` | `9004` | MySQL `how_article`、Redis |
+| `how_user` | `com.liushao.user.UserApplication` | `9008` | MySQL `how-blog-smaill` |
+| `how_base` | `com.liushao.base.BaseApplication` | `9001` | MySQL `how-blog-smaill` |
+| `how_article` | `com.liushao.article.ArticleApplication` | `9004` | MySQL `how-blog-smaill`、Redis |
 
 ## 技术栈
 
 - JDK 21
 - Spring Boot 2.7.18
 - Spring MVC
-- MyBatis-Plus 2.2.0
+- Spring Data JPA
 - MySQL Connector/J 8.0.33
-- MySQL，用于文章和评论数据
+- MySQL，用于用户、标签、文章和评论数据
 - Redis，用于评论点赞记录
 - Maven 多模块构建
 
@@ -57,12 +57,10 @@ HowBlog-2.0-Java/
 - Redis 地址和端口
 - 各服务的 HTTP 端口
 
-对应数据库名为：
+三个服务共用的数据库名为：
 
 ```text
-how_user
-how_base
-how_article
+how-blog-smaill
 ```
 
 文章服务还需要 Redis：
@@ -71,7 +69,7 @@ how_article
 Redis: 6379，逻辑数据库 3
 ```
 
-首次运行前，执行 [docs/mysql-init.sql](docs/mysql-init.sql) 创建三个 MySQL 数据库及所需业务表。
+首次运行前，执行 [docs/mysql-init.sql](docs/mysql-init.sql) 创建 MySQL 数据库及所需业务表。
 
 ## 编译项目
 
@@ -183,8 +181,8 @@ WebSocket 地址为 `ws://localhost:9008/im?user=alice`，HTTPS 环境自动使�
 
 - 所有业务模块继承根目录 `pom.xml` 的依赖和 Java 21 编译配置。
 - `how_common` 不单独启动，只作为公共依赖被其他模块引用。
-- MyBatis-Plus 当前使用旧版 2.x API，升级 Spring Boot 3.x 需要同步完成 `javax` 到 `jakarta` 迁移，并升级 MyBatis-Plus 及相关配置，不能只修改 Spring Boot 版本号。
-- 配置文件中的 MySQL 驱动类仍使用旧名称 `com.mysql.jdbc.Driver`。Connector/J 8 仍可兼容该配置，但新环境建议改为 `com.mysql.cj.jdbc.Driver`。
+- 数据访问使用 Spring Data JPA，当前 Spring Boot 2.7 使用 `javax.persistence`；升级 Spring Boot 3.x 时需要同步迁移至 `jakarta.persistence`。
+- 配置文件中的 MySQL 驱动类使用 Connector/J 8 的 `com.mysql.cj.jdbc.Driver`。
 - 当前评论点赞逻辑使用固定用户 ID `123`，实际接入登录态前不能视为完整的用户级鉴权方案。
 - 当前 IM 使用连接 URL 中的用户名作为展示身份，仅适合开发测试，不能替代登录认证。
 
