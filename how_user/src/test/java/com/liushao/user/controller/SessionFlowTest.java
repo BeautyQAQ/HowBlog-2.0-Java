@@ -40,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa", "spring.datasource.password=",
         "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect", "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.show-sql=false", "how.auth.jwt.secret=test-only-signing-key-not-for-production",
+        "how.auth.rate-limit.enabled=false", "how.auth.cleanup.enabled=false",
         "logging.level.root=WARN"
 })
 @AutoConfigureMockMvc

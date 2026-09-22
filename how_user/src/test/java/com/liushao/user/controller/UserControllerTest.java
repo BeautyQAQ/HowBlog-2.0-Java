@@ -17,8 +17,12 @@ import com.liushao.user.config.PasswordConfig;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.User;
 import com.liushao.user.service.UserService;
+import com.liushao.user.service.AuthRateLimiter;
+import com.liushao.user.service.AuthRateLimiter.Scope;
 
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -34,6 +38,41 @@ class UserControllerTest {
     @MockBean private com.liushao.user.dao.AuthSessionDao sessions;
     @MockBean private com.liushao.user.dao.AuthRefreshTokenDao refreshTokens;
     @MockBean private com.liushao.auth.SessionVerifier verifier;
+    @MockBean private AuthRateLimiter rateLimiter;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"login", "refresh", "logout"})
+    void rateLimitRunsBeforeAuthenticationParsingAndBusiness(String action) throws Exception {
+        Scope scope = Scope.valueOf(action.toUpperCase(java.util.Locale.ROOT) + "_IP");
+        doThrow(new AuthRateLimiter.Rejected(7)).when(rateLimiter).check(scope, "127.0.0.1");
+        mvc.perform(post("/user/" + action).header("Authorization", "Bearer invalid")
+                        .header("Origin", "https://example.test").header("X-Forwarded-For", "198.51.100.1")
+                        .contentType(MediaType.APPLICATION_JSON).content("{"))
+                .andExpect(status().isTooManyRequests()).andExpect(header().string("Retry-After", "7"))
+                .andExpect(header().string("Access-Control-Expose-Headers", "Retry-After"))
+                .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.code").value(20001))
+                .andExpect(jsonPath("$.flag").value(false));
+        verify(rateLimiter).check(scope, "127.0.0.1");
+        verifyNoInteractions(userDao, sessions, refreshTokens, verifier);
+    }
+
+    @Test
+    void accountLimitRunsBeforePasswordLookup() throws Exception {
+        doThrow(new AuthRateLimiter.Rejected(60)).when(rateLimiter).check(Scope.LOGIN_ACCOUNT, "test-user");
+        mvc.perform(post("/user/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"test-user\",\"password\":\"test-password\"}"))
+                .andExpect(status().isTooManyRequests());
+        verifyNoInteractions(userDao, sessions, refreshTokens);
+    }
+
+    @Test
+    void unavailableLimiterFailsClosed() throws Exception {
+        doThrow(new AuthRateLimiter.Rejected(0)).when(rateLimiter).check(Scope.REFRESH_IP, "127.0.0.1");
+        mvc.perform(post("/user/refresh").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isServiceUnavailable()).andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.message").value("服务暂时不可用，请稍后重试"));
+        verifyNoInteractions(userDao, sessions, refreshTokens);
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"{}", "{\"mobile\":\"test-user\"}", "{\"mobile\":\" \",\"password\":\"test-password\"}"})

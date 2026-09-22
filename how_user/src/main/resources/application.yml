@@ -3,6 +3,18 @@ server:
 spring:
   application:
     name: how-user
+  redis:
+    host: ${HOW_AUTH_REDIS_HOST:localhost}
+    port: ${HOW_AUTH_REDIS_PORT:6379}
+    password: ${HOW_AUTH_REDIS_PASSWORD:}
+    database: ${HOW_AUTH_REDIS_DATABASE:0}
+    ssl: ${HOW_AUTH_REDIS_SSL:false}
+    connect-timeout: 1s
+    timeout: 1s
+  task:
+    scheduling:
+      pool:
+        size: 2
   datasource: # 数据库连接四大属性
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://192.168.20.5:3306/how-blog-smaill?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
@@ -13,6 +25,20 @@ spring:
       ddl-auto: none
 how:
   auth:
+    rate-limit:
+      enabled: ${HOW_AUTH_RATE_LIMIT_ENABLED:true}
+      key-prefix: ${HOW_AUTH_RATE_LIMIT_KEY_PREFIX:howblog:auth:rate:v1:}
+      window-seconds: ${HOW_AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
+      login-ip-limit: ${HOW_AUTH_RATE_LIMIT_LOGIN_IP_LIMIT:20}
+      login-account-limit: ${HOW_AUTH_RATE_LIMIT_LOGIN_ACCOUNT_LIMIT:10}
+      refresh-ip-limit: ${HOW_AUTH_RATE_LIMIT_REFRESH_IP_LIMIT:60}
+      logout-ip-limit: ${HOW_AUTH_RATE_LIMIT_LOGOUT_IP_LIMIT:30}
+    cleanup:
+      enabled: ${HOW_AUTH_CLEANUP_ENABLED:false}
+      retention-hours: ${HOW_AUTH_CLEANUP_RETENTION_HOURS:24}
+      session-batch-size: ${HOW_AUTH_CLEANUP_SESSION_BATCH_SIZE:100}
+      token-batch-size: ${HOW_AUTH_CLEANUP_TOKEN_BATCH_SIZE:100}
+      interval-ms: ${HOW_AUTH_CLEANUP_INTERVAL_MS:600000}
     jwt:
       secret: ${HOW_AUTH_JWT_SECRET:}
       access-token-ttl-seconds: ${HOW_AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS:1800}

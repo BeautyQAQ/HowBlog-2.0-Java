@@ -5,6 +5,7 @@ import com.liushao.entity.StatusCode;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.service.UserService;
+import com.liushao.user.service.AuthRateLimiter;
 import com.liushao.user.pojo.RefreshRequest;
 import com.liushao.auth.RefreshCredentialEndpoint;
 import javax.validation.Valid;
@@ -14,18 +15,23 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("user")
-@CrossOrigin
+@CrossOrigin(exposedHeaders = "Retry-After")
 public class UserController {
 
     private final UserService userService;
+    private final AuthRateLimiter rateLimiter;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AuthRateLimiter rateLimiter) {
         this.userService = userService;
+        this.rateLimiter = rateLimiter;
     }
 
     @RequestMapping(value = "login", method = RequestMethod.POST)
     public Result login(@RequestBody LoginRequest loginRequest, HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-store");
+        if (loginRequest.getMobile() != null && !loginRequest.getMobile().isBlank()) {
+            rateLimiter.check(AuthRateLimiter.Scope.LOGIN_ACCOUNT, loginRequest.getMobile());
+        }
         LoginResponse result = userService.login(loginRequest);
 
         if (result != null) {

@@ -1,4 +1,4 @@
-# 标签管理员运维
+# 认证与标签管理员运维
 
 ## 部署顺序
 
@@ -26,3 +26,51 @@
 
 - MVC 测试覆盖管理员、普通用户、伪造请求字段、降权及数据库故障关闭；H2 JPA 切片验证实体映射、用户存在性关联和原生角色查询。
 - AUTH-08A 已验证独立 MySQL 8 的认证表创建与基础事务；本切片未对真实账号执行授权/降权，也未在实际基础服务数据库上运行完整 JPA 启动验收。上线前应核对基础服务确实指向已迁移且包含用户数据的目标库。
+
+## 认证限流部署（AUTH-10）
+
+用户服务新增 Redis 依赖，默认开启，故障返回 503 而非放行。上线前必须配置并验证 Redis，不能把本地 H2/MVC 通过当作部署验收。既有 MySQL 配置未改，本轮没有连接或修改业务数据。
+
+| 环境变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `HOW_AUTH_REDIS_HOST` / `HOW_AUTH_REDIS_PORT` | localhost / 6379 | 用户服务限流 Redis |
+| `HOW_AUTH_REDIS_PASSWORD` | 空 | 通过部署密钥注入，不写入仓库或命令历史 |
+| `HOW_AUTH_REDIS_DATABASE` / `HOW_AUTH_REDIS_SSL` | 0 / false | 数据库编号及 TLS；Redis Cluster 需使用数据库 0 并配置对应集群连接 |
+| `HOW_AUTH_RATE_LIMIT_ENABLED` | true | 显式 false 仅供隔离测试或经审批的回退，不是故障自动降级 |
+| `HOW_AUTH_RATE_LIMIT_KEY_PREFIX` | howblog:auth:rate:v1: | 同环境各实例相同，不同环境隔离 |
+| `HOW_AUTH_RATE_LIMIT_WINDOW_SECONDS` | 60 | 1..3600，首次请求起固定窗口 |
+| `HOW_AUTH_RATE_LIMIT_LOGIN_IP_LIMIT` | 20 | 每来源登录额度 |
+| `HOW_AUTH_RATE_LIMIT_LOGIN_ACCOUNT_LIMIT` | 10 | 每账号登录额度，跨来源共享 |
+| `HOW_AUTH_RATE_LIMIT_REFRESH_IP_LIMIT` | 60 | 每来源刷新额度 |
+| `HOW_AUTH_RATE_LIMIT_LOGOUT_IP_LIMIT` | 30 | 每来源退出额度，与登录/刷新独立 |
+
+- 额度范围为 1..100000；Redis 连接和命令超时均为 1 秒。Lua 在一个键上原子计数并设置 TTL，拒绝不增加计数、不续期；固定窗口边界仍允许突发。
+- 键仅包含维度和 HMAC-SHA256 摘要，密钥复用 JWT secret，账号作 NFKC、首尾空白及小写规范化；不把原始手机号、IP、密码或 token 写入 Redis 键/值及应用日志。所有用户实例必须使用相同的 secret、Redis、命名空间、阈值及窗口；改 secret/前缀、清空/淘汰 Redis 键会重置额度，配置变更需协调发布。
+- 权限至少需要脚本执行/缓存及 GET、INCR、PTTL、PEXPIRE。容量需按窗口内不同来源/账号数评估，建议使用隔离的限流 Redis 和 noeviction，监控内存、拒绝数、503 及延迟；内存耗尽会关闭认证入口，不应自动绕过限流。
+- 应用使用 `request.getRemoteAddr()`，不直接采信转发头。默认不启用转发头解析；需要真实代理来源时，先在可信入口覆盖外部头、限制直连来源，再配置和验证容器代理处理。否则反向代理/NAT 下会共享来源额度。
+- 只保护三个认证 POST 入口，不限制 OPTIONS、WebSocket 或其他 REST。仍需网关请求体大小、全局/连接限流和告警；被盗凭据分布式滥用、不受控代理链及大规模拒绝服务不能靠本功能解决。
+- 验收 429 的 Retry-After/CORS/no-store、账号跨 IP 共享、独立退出额度、Redis 断连后的 503，以及恢复后的请求。不要把 429/503 当作服务端退出成功。
+
+## 过期会话清理部署
+
+| 环境变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `HOW_AUTH_CLEANUP_ENABLED` | false | 仅明确授权后开启 |
+| `HOW_AUTH_CLEANUP_RETENTION_HOURS` | 24 | 绝对到期后的额外保留小时数，0..8760 |
+| `HOW_AUTH_CLEANUP_SESSION_BATCH_SIZE` | 100 | 每轮候选会话上限，1..1000 |
+| `HOW_AUTH_CLEANUP_TOKEN_BATCH_SIZE` | 100 | 每会话事务删除摘要上限，1..1000 |
+| `HOW_AUTH_CLEANUP_INTERVAL_MS` | 600000 | 首次启动延迟及每轮结束后的等待间隔，须为正整数 |
+
+1. 先确认目标库、备份、审计/保留要求和删除授权，核对原迁移中的到期索引、摘要 session_id 索引与外键；本轮无 DDL、无自动迁移，不执行既有测试或业务数据删除。
+2. 清理资格以数据库 `UTC_TIMESTAMP(6)` 减保留窗口确定，不依赖 JVM 时区。会话绝对到期前保留全部历史摘要，即使已撤销；到期后的保留窗口只用于历史数据，不延长认证有效期。
+3. 建议先在一个用户实例显式开启。每候选独立 15 秒事务，先锁会话行并复查期限，最多删除指定摘要数，剩余摘要后续轮次继续，无摘要才删会话；单事务失败回滚，停止本轮，下一轮重试。多个实例使用同一锁顺序避免重复删除，但每实例都有批次额度，不是集群全局删除上限。
+4. 应用账号需在两个认证表拥有 DELETE 及原有读写权限。默认每轮最多 10000 条摘要、100 条会话，不是无限全表删除；如遇锁等待或积压，观察日志/数据库指标后调整。实际 MySQL 锁超时语义仍待隔离验收。
+5. 关闭开关后重启实例可停调度，但不能恢复已删除记录；需要恢复时按备份流程处理。已删旧凭据的退出返回 401，须先同步 API revision 8。
+
+调度池设为两个线程，减少清理与现有 IM 空闲检查互相阻塞；仍需监控连接池和数据库负载。日志仅输出聚合摘要删除数和固定失败提示，不记录会话 ID/凭据。
+
+## 本轮验收边界
+
+- H2 真实事务覆盖摘要分批、会话最终删除、保留边界、活跃/撤销会话保护、删除失败回滚和并发清理；调度测试覆盖默认关闭、数据库时间和故障重试。MVC 覆盖限流早于 JWT/JSON/密码查询、429/503、跨域重试头和伪造转发头。
+- 真实 Redis 测试默认跳过，只在显式设置 `HOW_AUTH_REDIS_TEST_PORT` 后连接 `127.0.0.1` 指定端口。准备隔离的无密码本机 Redis 后运行 `mvn -pl how_user -am test -Dtest=AuthRateLimiterRedisTest -Dsurefire.failIfNoSpecifiedTests=false`；测试使用随机前缀、最多 30 秒 TTL，不执行 FLUSHDB，也不删除其他键。覆盖两实例并发额度、TTL 不续期及到期恢复。
+- 本轮未找到可用 Redis 服务，未运行真实 Lua 或 MySQL 清理；旧 MySQL 测试授权不自动扩展为清理授权。正式启用前需补真实 Redis、MySQL 行锁/外键/回滚、多实例和浏览器验收。

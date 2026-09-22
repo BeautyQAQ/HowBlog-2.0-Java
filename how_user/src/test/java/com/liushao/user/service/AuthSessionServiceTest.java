@@ -2,6 +2,7 @@ package com.liushao.user.service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -17,6 +18,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,12 +40,13 @@ import static org.mockito.Mockito.reset;
         "how.auth.jwt.secret=test-only-signing-key-not-for-production",
         "logging.level.root=WARN"
 })
-@Import(AuthSessionService.class)
+@Import({AuthSessionService.class, AuthSessionCleanupService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class AuthSessionServiceTest {
     @MockBean private ObjectMapper objectMapper;
     @Autowired private AuthSessionService service;
-    @Autowired private AuthSessionDao sessions;
+    @Autowired private AuthSessionCleanupService cleanup;
+    @SpyBean private AuthSessionDao sessions;
     @SpyBean private AuthRefreshTokenDao refreshTokens;
     @Autowired private UserDao users;
     @Autowired private JdbcTemplate jdbc;
@@ -55,6 +58,89 @@ class AuthSessionServiceTest {
         userId = "session-test-" + UUID.randomUUID();
         user.setId(userId);
         users.saveAndFlush(user);
+    }
+
+    @Test
+    void cleanupDeletesOnlyBoundedDigestsThenEmptySession() {
+        AuthSessionService.Grant first = service.create(userId);
+        AuthSessionService.Grant second = service.rotate(first.getRefreshToken()).orElseThrow();
+        service.rotate(second.getRefreshToken()).orElseThrow();
+        LocalDateTime cutoff = LocalDateTime.of(1990, 1, 2, 0, 0);
+        jdbc.update("UPDATE tb_auth_session SET expires_at = ? WHERE id = ?", cutoff, first.getSessionId());
+        assertEquals(2, cleanup.cleanSession(first.getSessionId(), cutoff, 2));
+        assertTrue(sessions.existsById(first.getSessionId()));
+        assertEquals(1, cleanup.cleanSession(first.getSessionId(), cutoff, 2));
+        assertFalse(sessions.existsById(first.getSessionId()));
+        assertFalse(refreshTokens.existsBySessionId(first.getSessionId()));
+        assertEquals(0, cleanup.cleanSession(first.getSessionId(), cutoff, 2));
+        assertFalse(service.revoke(first.getRefreshToken()));
+    }
+
+    @Test
+    void cleanupPreservesActiveRevokedAndRetentionWindowSessions() {
+        AuthSessionService.Grant active = service.create(userId);
+        AuthSessionService.Grant rotated = service.rotate(active.getRefreshToken()).orElseThrow();
+        AuthSessionService.Grant revoked = service.create(userId);
+        service.revoke(revoked.getRefreshToken());
+        AuthSessionService.Grant retained = service.create(userId);
+        LocalDateTime cutoff = LocalDateTime.of(1990, 1, 2, 0, 0);
+        jdbc.update("UPDATE tb_auth_session SET expires_at = ? WHERE id = ?", cutoff.plusSeconds(1), retained.getSessionId());
+        for (AuthSessionService.Grant grant : List.of(active, revoked, retained)) {
+            assertEquals(0, cleanup.cleanSession(grant.getSessionId(), cutoff, 2));
+            assertTrue(refreshTokens.existsBySessionId(grant.getSessionId()));
+        }
+        assertTrue(service.rotate(active.getRefreshToken()).isEmpty());
+        assertTrue(service.rotate(rotated.getRefreshToken()).isEmpty());
+    }
+
+    @Test
+    void cleanupRollsBackDigestDeletionIfSessionDeletionFails() {
+        AuthSessionService.Grant grant = service.create(userId);
+        LocalDateTime cutoff = LocalDateTime.of(1990, 1, 2, 0, 0);
+        jdbc.update("UPDATE tb_auth_session SET expires_at = ? WHERE id = ?", cutoff, grant.getSessionId());
+        doThrow(new IllegalStateException("simulated delete failure")).when(sessions).delete(any());
+        assertThrows(IllegalStateException.class, () -> cleanup.cleanSession(grant.getSessionId(), cutoff, 2));
+        reset(sessions);
+        assertTrue(refreshTokens.existsBySessionId(grant.getSessionId()));
+        assertTrue(sessions.existsById(grant.getSessionId()));
+        assertEquals(1, cleanup.cleanSession(grant.getSessionId(), cutoff, 2));
+    }
+
+    @Test
+    void concurrentCleanupDoesNotDoubleDelete() throws Exception {
+        AuthSessionService.Grant grant = service.create(userId);
+        LocalDateTime cutoff = LocalDateTime.of(1990, 1, 2, 0, 0);
+        jdbc.update("UPDATE tb_auth_session SET expires_at = ? WHERE id = ?", cutoff, grant.getSessionId());
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Callable<Integer> task = () -> {
+                assertTrue(start.await(5, TimeUnit.SECONDS));
+                return cleanup.cleanSession(grant.getSessionId(), cutoff, 2);
+            };
+            Future<Integer> first = executor.submit(task);
+            Future<Integer> second = executor.submit(task);
+            start.countDown();
+            assertEquals(1, first.get(20, TimeUnit.SECONDS) + second.get(20, TimeUnit.SECONDS));
+            assertFalse(sessions.existsById(grant.getSessionId()));
+        } finally {
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(20, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void cleanupCandidatesUseAbsoluteExpiryAndRespectBatchLimit() {
+        AuthSessionService.Grant expired = service.create(userId);
+        AuthSessionService.Grant boundary = service.create(userId);
+        AuthSessionService.Grant revoked = service.create(userId);
+        service.revoke(revoked.getRefreshToken());
+        LocalDateTime cutoff = LocalDateTime.of(1990, 1, 2, 0, 0);
+        jdbc.update("UPDATE tb_auth_session SET expires_at = ? WHERE id = ?", cutoff.minusDays(1), expired.getSessionId());
+        jdbc.update("UPDATE tb_auth_session SET expires_at = ? WHERE id = ?", cutoff, boundary.getSessionId());
+        assertEquals(List.of(expired.getSessionId(), boundary.getSessionId()),
+                sessions.findExpiredIds(cutoff, PageRequest.of(0, 10)));
+        assertEquals(List.of(expired.getSessionId()), sessions.findExpiredIds(cutoff, PageRequest.of(0, 1)));
     }
 
     @Test

@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "5.0.0",
-  "revision": 7,
+  "contractVersion": "6.0.0",
+  "revision": 8,
   "updatedAt": "2026-09-22",
-  "latestChangeId": "API-20260922-007",
+  "latestChangeId": "API-20260922-008",
   "latestChangeType": "protocol",
   "breaking": true,
   "requiresFrontendAction": true,
   "changedAreas": [
-    "user-login-session",
-    "user-refresh-logout",
-    "all-rest-session-authentication",
-    "websocket-session-revocation"
+    "user-auth-rate-limiting",
+    "user-auth-429-503-retry-after",
+    "user-logout-expired-credential-retention",
+    "user-auth-cors-exposed-headers"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",
