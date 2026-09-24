@@ -109,3 +109,14 @@
 - 部署动作：为用户服务配置独立的 Redis 连接环境变量，各实例共享 Redis、键前缀、JWT secret 和阈值；验证可信代理来源。清理需单独授权、确认备份/保留策略和 DELETE 权限后开启，默认不删除现有数据。详见 `admin-operations.md`。
 - 验证：JDK 21 全模块 `mvn clean test` 138 项通过、3 项外部测试跳过；新增 22 项默认测试，另新增显式本机 Redis 验收入口，默认跳过。未执行真实 Redis Lua、多实例网络或 MySQL 清理验收，无远程写入或 DDL。
 - 发布状态：三件套已随后端提交 `79c4c61` 推送至 `origin/master`。2026-09-23 检查前端仓库的 `backend-api-sync.json` 仍为 revision `7`，尚未确认消费 revision `8`；前端工作区存在未提交改动，本次未修改前端文件。
+
+## Revision 9 - API-20260924-009
+
+- 日期：2026-09-24
+- 类型：修复 / 数据一致性
+- 破坏性变更：否；contract version `6.0.1`。
+- 影响范围：文章服务 `PUT /comment/thumbup/{id}`，文章服务数据库迁移。
+- 变更内容：评论点赞以 MySQL `tb_comment_thumbup` 的 `(commentid, userid)` 唯一关系为最终去重依据，并与评论计数更新处于同一事务；Redis 仅在事务提交后写入短期 `thumbup:v2:` 缓存。Redis 不可用、缓存写入失败或旧缓存残留不再改变点赞结果。旧版 `thumbup_<userId>_<commentId>` 键首次命中时只补登记关系，不重复增加计数。新增表使用评论外键级联删除。
+- 前端动作：无需修改请求路径、请求体、认证头或成功/重复/不存在的响应处理；保存已处理 revision `9`。部署前执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)，不要在未迁移关系表的旧实例上启用新文章服务。
+- 验证：`how_article` 及 `how_common` 测试 43 项通过，覆盖正常、重复、缺失、Redis 不可用、数据库失败、旧键迁移和控制器路径；真实 MySQL/Redis 迁移与并发 HTTP 联调尚未执行。
+- 发布状态：工作区已同步，待后端提交发布；前端仅需更新同步指针，无代码改动。

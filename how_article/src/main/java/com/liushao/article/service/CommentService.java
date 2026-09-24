@@ -1,13 +1,17 @@
 package com.liushao.article.service;
 
 import com.liushao.article.dao.CommentDao;
+import com.liushao.article.dao.CommentThumbupDao;
 import com.liushao.article.pojo.Comment;
 import com.liushao.util.IdWorker;
 import com.liushao.web.ResourceNotFoundException;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.Date;
 import java.util.List;
 
@@ -16,13 +20,20 @@ import java.util.List;
  */
 @Service
 public class CommentService {
+    private static final Duration REDIS_CLAIM_TTL = Duration.ofHours(1);
+    private static final String LEGACY_THUMBUP_PREFIX = "thumbup_";
+    private static final String THUMBUP_CACHE_PREFIX = "thumbup:v2:";
+
     private final IdWorker idWorker;
     private final CommentDao commentDao;
+    private final CommentThumbupDao commentThumbupDao;
     private final RedisTemplate redisTemplate;
 
-    public CommentService(IdWorker idWorker, CommentDao commentDao, RedisTemplate redisTemplate) {
+    public CommentService(IdWorker idWorker, CommentDao commentDao, CommentThumbupDao commentThumbupDao,
+                          RedisTemplate redisTemplate) {
         this.idWorker = idWorker;
         this.commentDao = commentDao;
+        this.commentThumbupDao = commentThumbupDao;
         this.redisTemplate = redisTemplate;
     }
 
@@ -78,20 +89,63 @@ public class CommentService {
      */
     @Transactional
     public ThumbupResult thumbup(String id, String userId) {
-        String key = "thumbup_" + userId + "_" + id;
-        Boolean claimed = redisTemplate.opsForValue().setIfAbsent(key, 1);
-        if (!Boolean.TRUE.equals(claimed)) {
-            return ThumbupResult.DUPLICATE;
-        }
+        String legacyKey = LEGACY_THUMBUP_PREFIX + userId + "_" + id;
+        String cacheKey = THUMBUP_CACHE_PREFIX + userId + ":" + id;
         try {
-            if (commentDao.incrementThumbup(id) != 1) {
-                redisTemplate.delete(key);
+            if (commentDao.findByIdForUpdate(id).isEmpty()) {
                 return ThumbupResult.NOT_FOUND;
             }
+            boolean legacyThumbup = hasRedisKey(legacyKey);
+            if (commentThumbupDao.insertIfAbsent(id, userId) != 1) {
+                return ThumbupResult.DUPLICATE;
+            }
+            if (legacyThumbup) {
+                scheduleCache(cacheKey);
+                return ThumbupResult.DUPLICATE;
+            }
+            if (commentDao.incrementThumbup(id) != 1) {
+                commentThumbupDao.deleteClaim(id, userId);
+                return ThumbupResult.NOT_FOUND;
+            }
+            scheduleCache(cacheKey);
             return ThumbupResult.SUCCESS;
         } catch (RuntimeException exception) {
-            redisTemplate.delete(key);
             throw exception;
+        }
+    }
+
+    private boolean hasRedisKey(String key) {
+        try {
+            return Boolean.TRUE.equals(redisTemplate.hasKey(key));
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private void cacheRedis(String key) {
+        try {
+            redisTemplate.opsForValue().setIfAbsent(key, 1, REDIS_CLAIM_TTL);
+        } catch (RuntimeException exception) {
+        }
+    }
+
+    private void scheduleCache(String key) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cacheRedis(key);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cacheRedis(key);
+            }
+        });
+    }
+
+    private void releaseRedis(String key) {
+        try {
+            redisTemplate.delete(key);
+        } catch (RuntimeException ignored) {
         }
     }
 

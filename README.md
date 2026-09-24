@@ -187,7 +187,7 @@ WebSocket 地址为 `ws://localhost:9008/im?token=<access-token>`，HTTPS 环境
 - 数据访问使用 Spring Data JPA，当前 Spring Boot 2.7 使用 `javax.persistence`；升级 Spring Boot 3.x 时需要同步迁移至 `jakarta.persistence`。
 - 配置文件中的 MySQL 驱动类使用 Connector/J 8 的 `com.mysql.cj.jdbc.Driver`。
 - 当前访问令牌由 `how_user` 签发，其他服务使用同一 `HOW_AUTH_JWT_SECRET` 校验；暂无刷新、退出或主动撤销接口。
-- 评论点赞已按 token 用户进行去重；Redis 与 MySQL 的跨存储补偿和 IM 多实例广播仍未完成。
+- 评论点赞已按 token 用户进行去重；MySQL 唯一关系表与原子计数负责最终一致性，Redis 仅保留提交后的短期兼容缓存。部署前需执行 `docs/mysql-thumbup-migration.sql`；IM 多实例广播仍未完成。
 - 当前 IM 使用 token 对应的用户 ID 作为身份，消息仍保存在进程内存中，仅适合开发测试。
 
 ## 构建验证

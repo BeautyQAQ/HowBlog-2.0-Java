@@ -2,10 +2,10 @@
 
 ## 1. 当前状态
 
-- 更新时间：2026-09-23
-- 当前阶段：AUTH-10 认证限流与过期会话有界清理已实现并推送；真实 Redis Lua 固定窗口验收通过，用户于 2026-09-23 确认上线验收通过；清理默认关闭
-- 当前接口契约：revision `8`、contract version `6.0.0` 已包含于 `79c4c61`（`master` 与 `origin/master` 一致）；前端仓库当前同步指针仍为 revision `7`，尚未确认消费 revision 8
-- 总体判断：Phase 1 核心实现和上线验收已完成（上线验收由用户确认）；会话清理仍默认关闭，Phase 2 点赞跨存储一致性补偿尚未实现
+- 更新时间：2026-09-24
+- 当前阶段：用户要求暂停；Phase 2 点赞一致性代码已完成，MySQL DDL 和并发 HTTP 已验证，Redis 旧键端到端迁移及最终回归、提交推送尚未完成；会话清理默认关闭
+- 当前接口契约：revision `9`、contract version `6.0.1`；前端工作区已消费 revision `9`，后端和前端改动均尚未提交；后端代码中的评论行锁修复尚未发布
+- 总体判断：Phase 1 核心实现和上线验收已完成；Phase 2 点赞表已在 DBX `nas-mysql` 的 `how-blog-smaill` 建立，并通过真实 HTTP 并发验收；Redis 旧键验证因 RedisTemplate 序列化格式尚未确认而暂停
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -32,7 +32,7 @@
 | --- | --- | ---: | --- |
 | Phase 0 基线整理 | 已完成 | 100% | 构建、模块、契约和已知限制已记录 |
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
-| Phase 2 测试与数据一致性 | 已有测试基础 | 待评估 | 138 项默认测试通过；已有核心 MySQL 验收，点赞一致性补偿尚未实现 |
+| Phase 2 测试与数据一致性 | 进行中 | 45% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL 与 20 路 HTTP 并发通过；Redis 旧键格式及迁移验收、Testcontainers 尚未完成 |
 | Phase 3 配置、部署与可观测性 | 未开始 | 0% | 需要先确定运行环境和服务编排方式 |
 | Phase 4 博客核心产品能力 | 未开始 | 0% | 等安全和测试底座稳定后推进 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
@@ -70,9 +70,9 @@
 - [x] 标签服务写入口查询数据库 `ADMIN` 且检查用户存在；无角色返回 403、角色存储故障返回脱敏 500，不放行写入。未授予任何真实账号管理员权限。
 - [x] 三个服务控制器异常已统一脱敏，坏 JSON/参数错误、缺失资源及未知异常返回明确 HTTP 状态。
 - [ ] 最大文本长度、状态枚举、评论关联文章/父评论存在性校验仍未全面覆盖。
-- [x] 用户确认前端可直接读取后端 GitHub 仓库；本次检查前端 `backend-api-sync.json` 仍记录 revision `7`，其工作区有未提交改动，revision `8` 尚未确认消费。
+- [x] 用户确认前端可直接读取后端 GitHub 仓库；2026-09-24 前端 `backend-api-sync.json` 已更新至 revision `9`，本次无前端业务代码改动。
 - [x] 用户已确认独立 MySQL 8 配置和建表/测试写入授权；认证表与基础事务测试通过。不得将该次授权扩展为任意业务数据修改。
-- [ ] Redis 与 MySQL 点赞提交失败后的最终一致性补偿策略尚未完成。
+- [>] MySQL 点赞关系迁移已在 `nas-mysql` 执行；真实 HTTP 20 路同用户并发为 1 次成功、19 次重复、0 次 5xx。真实旧 Redis 键尚未验证：当前 RedisTemplate 使用默认序列化，DBX 文本 `GET/SET thumbup_*` 可能与应用实际二进制序列化键不匹配；需先确认序列化器/实际 key bytes，再在确认的同一 Redis 实例上测试迁移。
 - [ ] JWT secret、数据库和 Redis 配置仍需进一步完成环境变量化和敏感信息清理。
 
 ## 5. 任务验收记录
@@ -98,6 +98,8 @@
 | revision 8 发布状态与 Redis DBX 预检 | 2026-09-23 | 2026-09-23 | 后端 `HEAD` 与 `origin/master` 均为 `79c4c61`；前端状态仍为 revision 7；`nas-redis` 可达 | 修正发布状态，确认前端尚未消费；初次 DBX EVAL 尝试响应标记与键状态不一致，后续通过隔离键重新验收 |
 | AUTH-10 真实 Redis Lua 固定窗口 | 2026-09-23 | 2026-09-23 | DBX `nas-redis`，逻辑库 15；随机专用键，项目 Lua 脚本；额度 3/窗口 600 秒 | 6 次并行调用恰好 3 次放行、3 次返回正 TTL；计数为 3；拒绝不重置 TTL；测试键过期后请求重新放行并从 1 计数。专用键已精确清理，db15 `DBSIZE=0`。未覆盖 Spring HTTP 429/503、Redis 故障关闭或真实应用多实例 |
 | AUTH-10 上线验收 | 2026-09-23 | 2026-09-23 | 用户确认上线验收通过；详细环境、步骤和单项结果未提供 | 按用户确认登记通过；不据此声称会话清理已启用或执行了数据库删除 |
+| Phase 2 点赞一致性首个切片 | 2026-09-24 | 2026-09-24 | `mvn -pl how_article -am -Dtest=CommentServiceTest,ArticleControllerTest test`；43 项通过 | MySQL 唯一关系、原子计数、旧 Redis 键迁移、Redis 故障和控制器边界已覆盖；真实 MySQL/Redis 迁移与并发 HTTP 尚未执行 |
+| Phase 2 DBX/HTTP 联调暂停点 | 2026-09-24 |  | DBX `nas-mysql` 执行 `CREATE TABLE tb_comment_thumbup` 并核验；文章服务真实 HTTP 20 并发；后端 `mvn -pl how_article -am -Dtest=CommentServiceTest,ArticleControllerTest test` | DDL 已完成，未改写历史评论/点赞数据。目标库基线 3 评论、29 计数，目标 Redis db3 扫描未发现旧文本键。真实并发 20 请求为 1 成功、19 重复、0 5xx；首次并发复现 MySQL 1213 死锁，新增 `SELECT ... FOR UPDATE` 后复测通过。临时评论和 Redis 文本键已精确清理，临时 DBX 连接已移除，9004/9008 服务已停止。旧 Redis 键未完成端到端迁移验证：文本 Redis 键与 Spring 默认 RedisTemplate JDK 序列化键可能不一致。全量测试、真实旧键验收、前后端最终 diff、提交及推送均待继续。 |
 
 ## 6. 变更记录
 
@@ -151,6 +153,8 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 如需追溯发布记录，可补充上线验收环境和逐项证据；继续确认前端 revision `8` 消费状态。会话清理保持默认关闭，只有另行明确授权后才验证清理任务；不直接清理现有数据。
-2. 在 Phase 2 设计 Redis/MySQL 点赞的一致性补偿，并补充 Testcontainers 或等价集成环境。
-3. 在 Phase 3 完成数据库、Redis、JWT secret、CORS 和 Docker Compose 的环境化配置。
+1. 从本暂停点继续：先检查 `RedisTemplate` 的 key/value serializer 和应用实际 Redis 地址/逻辑库。DBX 写入的普通字符串键不能直接作为旧键迁移验收，先证明 DBX `nas-redis` 与文章服务 Redis 确为同一实例，并生成应用序列化格式的专用旧键后再测试。
+2. 不要重复执行已成功的 MySQL DDL；确认 `tb_comment_thumbup` 仍存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
+3. Redis 旧键迁移验收完成后，执行后端全量 `mvn test` 和前端契约回归，更新本表和 revision 9 发布状态，再按用户请求提交并推送前后端变更。
+4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。
+5. 在 Phase 3 完成数据库、Redis、JWT secret、CORS 和 Docker Compose 的环境化配置。

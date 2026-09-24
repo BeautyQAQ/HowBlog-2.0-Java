@@ -77,3 +77,12 @@ CREATE TABLE IF NOT EXISTS `tb_comment` (
   KEY `idx_tb_comment_parentid` (`parentid`),
   KEY `idx_tb_comment_publishdate` (`publishdate`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章评论表';
+
+CREATE TABLE IF NOT EXISTS `tb_comment_thumbup` (
+  `commentid` VARCHAR(64) NOT NULL,
+  `userid` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`commentid`, `userid`),
+  KEY `idx_tb_comment_thumbup_userid` (`userid`),
+  CONSTRAINT `fk_comment_thumbup_comment` FOREIGN KEY (`commentid`)
+    REFERENCES `tb_comment` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='评论点赞唯一关系';

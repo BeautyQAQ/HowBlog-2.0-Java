@@ -437,7 +437,9 @@ Content-Type: application/json
 - 首次点赞通常返回 `flag: true`、`code: 20000`、`message: "点赞成功"`。
 - 同一用户再次点赞返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
 - 评论不存在时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
-- 点赞去重记录写入 Redis，计数在 MySQL 中原子递增；Redis/MySQL 提交失败时的最终一致性补偿仍属于后续任务。
+- 点赞关系写入 MySQL 的 `tb_comment_thumbup` 唯一关系表，计数在同一事务中原子递增；Redis 仅作为提交后的短期兼容缓存，Redis 不可用不改变数据库结果。
+- 旧版本 `thumbup_<userId>_<commentId>` Redis 记录会在首次请求时登记到关系表但不会再次增加计数；部署前必须先执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。
+- 数据库事务失败不会写入新的 Redis 缓存；关系表唯一键负责并发去重，避免 Redis 残留导致永久误判或重复计数。
 
 按评论 ID和按文章 ID 查询使用不同的路径模板，前端应使用 `/comment/{id}` 查询单条评论，使用 `/comment/article/{articleId}` 查询文章评论列表；不要通过同一个路径推断查询语义。
 
@@ -566,7 +568,7 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - 已支持持久化登录会话、刷新轮换和当前会话退出；没有全设备退出或管理员撤销接口。过期会话/历史刷新摘要的有界清理已实现但默认关闭，须经运维确认保留策略、数据库权限和删除授权后开启，见 [admin-operations.md](admin-operations.md)。
 - 认证限流依赖用户服务 Redis，默认开启且故障关闭；当前自动化测试覆盖 MVC、模拟 Redis 和 H2 清理，真实 Redis Lua、多实例网络和 MySQL 清理验收尚未执行。固定窗口不是滑动窗口，窗口边界允许短时突发；不替代网关全局流量限制。
 - 文章和评论继续要求作者本人；数据库 `ADMIN` 目前仅用于标签管理，不拥有代改文章或评论的权限。角色管理无公开接口，初始化流程见 [admin-operations.md](admin-operations.md)。
-- 评论点赞使用 Redis 去重和 MySQL 原子计数，但跨存储提交失败的补偿策略尚未完成。
+- 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)，真实 MySQL/Redis 联调仍需单独验收。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
 - 已有基础必填、非空白、非负计数和分页校验；最大文本长度、状态枚举、关联资源存在性仍未全面校验。
 - 已通过 H2 完整登录/刷新/退出事务与 MVC 测试、IM 处理器撤销测试；此前会话核心的真实 MySQL 事务验收已通过。本轮未执行真实浏览器、多实例 IM 或全链路 MySQL/Redis 联调。

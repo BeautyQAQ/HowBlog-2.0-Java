@@ -1,17 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.0.0",
-  "revision": 8,
-  "updatedAt": "2026-09-22",
-  "latestChangeId": "API-20260922-008",
-  "latestChangeType": "protocol",
-  "breaking": true,
-  "requiresFrontendAction": true,
+  "contractVersion": "6.0.1",
+  "revision": 9,
+  "updatedAt": "2026-09-24",
+  "latestChangeId": "API-20260924-009",
+  "latestChangeType": "fix",
+  "breaking": false,
+  "requiresFrontendAction": false,
   "changedAreas": [
-    "user-auth-rate-limiting",
-    "user-auth-429-503-retry-after",
-    "user-logout-expired-credential-retention",
-    "user-auth-cors-exposed-headers"
+    "comment-thumbup-consistency",
+    "comment-thumbup-database-migration"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

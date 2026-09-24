@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.liushao.article.dao.ArticleDao;
 import com.liushao.article.dao.CommentDao;
+import com.liushao.article.dao.CommentThumbupDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.article.pojo.Comment;
 import com.liushao.article.service.ArticleService;
@@ -50,6 +51,7 @@ class ArticleControllerTest {
     @Autowired private JwtTokenService tokens;
     @MockBean private ArticleDao articleDao;
     @MockBean private CommentDao commentDao;
+        @MockBean private CommentThumbupDao commentThumbupDao;
     @MockBean private RedisTemplate redisTemplate;
         @MockBean private com.liushao.auth.SessionVerifier sessions;
 
@@ -165,14 +167,10 @@ class ArticleControllerTest {
 
         @Test
         void returnsNotFoundAndReleasesClaimForMissingThumbupTarget() throws Exception {
-                ValueOperations operations = mock(ValueOperations.class);
-                when(redisTemplate.opsForValue()).thenReturn(operations);
-                when(operations.setIfAbsent("thumbup_author_missing", 1)).thenReturn(true);
-                when(commentDao.incrementThumbup("missing")).thenReturn(0);
+                when(commentDao.findByIdForUpdate("missing")).thenReturn(Optional.empty());
                 mvc.perform(put("/comment/thumbup/missing").header("Authorization", authorization()))
                                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001))
                                 .andExpect(jsonPath("$.message").value("资源不存在"));
-                verify(redisTemplate).delete("thumbup_author_missing");
                 assertTrue(CurrentUserContext.get().isEmpty());
         }
 

@@ -1,6 +1,7 @@
 package com.liushao.article.service;
 
 import com.liushao.article.dao.CommentDao;
+import com.liushao.article.dao.CommentThumbupDao;
 import com.liushao.article.pojo.Comment;
 import com.liushao.util.IdWorker;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.Optional;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -29,6 +31,9 @@ class CommentServiceTest {
     private CommentDao commentDao;
 
     @Mock
+    private CommentThumbupDao commentThumbupDao;
+
+    @Mock
     private RedisTemplate redisTemplate;
 
     @Mock
@@ -38,13 +43,15 @@ class CommentServiceTest {
 
     @BeforeEach
     void setUp() {
-        commentService = new CommentService(idWorker, commentDao, redisTemplate);
+        commentService = new CommentService(idWorker, commentDao, commentThumbupDao, redisTemplate);
     }
 
     @Test
     void acceptsFirstThumbupForAUserAndIncrementsOnce() {
         stubValueOperations();
-        when(valueOperations.setIfAbsent("thumbup_10001_comment-1", 1)).thenReturn(true);
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.of(commentOwnedBy("10002")));
+        when(redisTemplate.hasKey("thumbup_10001_comment-1")).thenReturn(false);
+        when(commentThumbupDao.insertIfAbsent("comment-1", "10001")).thenReturn(1);
         when(commentDao.incrementThumbup("comment-1")).thenReturn(1);
 
         CommentService.ThumbupResult result = commentService.thumbup("comment-1", "10001");
@@ -52,12 +59,13 @@ class CommentServiceTest {
         assertEquals(CommentService.ThumbupResult.SUCCESS, result);
         verify(commentDao).incrementThumbup("comment-1");
         verify(redisTemplate, never()).delete("thumbup_10001_comment-1");
+        verify(valueOperations).setIfAbsent("thumbup:v2:10001:comment-1", 1, Duration.ofHours(1));
     }
 
     @Test
     void rejectsDuplicateThumbupBeforeTouchingDatabase() {
-        stubValueOperations();
-        when(valueOperations.setIfAbsent("thumbup_10001_comment-1", 1)).thenReturn(false);
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.of(commentOwnedBy("10002")));
+        when(commentThumbupDao.insertIfAbsent("comment-1", "10001")).thenReturn(0);
 
         CommentService.ThumbupResult result = commentService.thumbup("comment-1", "10001");
 
@@ -67,28 +75,72 @@ class CommentServiceTest {
 
     @Test
     void removesRedisClaimWhenCommentDoesNotExist() {
-        stubValueOperations();
-        when(valueOperations.setIfAbsent("thumbup_10001_comment-1", 1)).thenReturn(true);
-        when(commentDao.incrementThumbup("comment-1")).thenReturn(0);
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.empty());
 
         CommentService.ThumbupResult result = commentService.thumbup("comment-1", "10001");
 
         assertEquals(CommentService.ThumbupResult.NOT_FOUND, result);
-        verify(redisTemplate).delete("thumbup_10001_comment-1");
+        verify(commentThumbupDao, never()).insertIfAbsent("comment-1", "10001");
+        verify(redisTemplate, never()).hasKey("thumbup_10001_comment-1");
     }
 
     @Test
     void removesRedisClaimWhenDatabaseUpdateFails() {
-        stubValueOperations();
         RuntimeException failure = new RuntimeException("database unavailable");
-        when(valueOperations.setIfAbsent("thumbup_10001_comment-1", 1)).thenReturn(true);
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.of(commentOwnedBy("10002")));
+        when(redisTemplate.hasKey("thumbup_10001_comment-1")).thenReturn(false);
+        when(commentThumbupDao.insertIfAbsent("comment-1", "10001")).thenReturn(1);
         when(commentDao.incrementThumbup("comment-1")).thenThrow(failure);
 
         assertThrows(
                 RuntimeException.class,
                 () -> commentService.thumbup("comment-1", "10001")
         );
-        verify(redisTemplate).delete("thumbup_10001_comment-1");
+        verify(redisTemplate, never()).delete("thumbup_10001_comment-1");
+    }
+
+    @Test
+    void migratesLegacyRedisThumbupWithoutIncrementingAgain() {
+        stubValueOperations();
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.of(commentOwnedBy("10002")));
+        when(redisTemplate.hasKey("thumbup_10001_comment-1")).thenReturn(true);
+        when(commentThumbupDao.insertIfAbsent("comment-1", "10001")).thenReturn(1);
+
+        CommentService.ThumbupResult result = commentService.thumbup("comment-1", "10001");
+
+        assertEquals(CommentService.ThumbupResult.DUPLICATE, result);
+        verify(commentDao, never()).incrementThumbup("comment-1");
+        verify(valueOperations).setIfAbsent("thumbup:v2:10001:comment-1", 1, Duration.ofHours(1));
+    }
+
+    @Test
+    void fallsBackToDatabaseWhenRedisIsUnavailable() {
+        when(redisTemplate.opsForValue()).thenThrow(new IllegalStateException("redis unavailable"));
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.of(commentOwnedBy("10002")));
+        when(redisTemplate.hasKey("thumbup_10001_comment-1")).thenThrow(new IllegalStateException("redis unavailable"));
+        when(commentThumbupDao.insertIfAbsent("comment-1", "10001")).thenReturn(1);
+        when(commentDao.incrementThumbup("comment-1")).thenReturn(1);
+
+        CommentService.ThumbupResult result = commentService.thumbup("comment-1", "10001");
+
+        assertEquals(CommentService.ThumbupResult.SUCCESS, result);
+        verify(commentDao).incrementThumbup("comment-1");
+    }
+
+    @Test
+    void preservesDatabaseFailureWhenRedisReleaseAlsoFails() {
+        RuntimeException databaseFailure = new RuntimeException("database unavailable");
+        when(commentDao.findByIdForUpdate("comment-1")).thenReturn(Optional.of(commentOwnedBy("10002")));
+        when(redisTemplate.hasKey("thumbup_10001_comment-1")).thenReturn(false);
+        when(commentThumbupDao.insertIfAbsent("comment-1", "10001")).thenReturn(1);
+        when(commentDao.incrementThumbup("comment-1")).thenThrow(databaseFailure);
+
+        RuntimeException failure = assertThrows(
+                RuntimeException.class,
+                () -> commentService.thumbup("comment-1", "10001")
+        );
+
+        assertEquals(databaseFailure, failure);
     }
 
     @Test
