@@ -3,9 +3,9 @@
 ## 1. 当前状态
 
 - 更新时间：2026-09-24
-- 当前阶段：用户要求暂停；Phase 2 点赞一致性代码已完成，MySQL DDL 和并发 HTTP 已验证，Redis 旧键端到端迁移及最终回归、提交推送尚未完成；会话清理默认关闭
-- 当前接口契约：revision `9`、contract version `6.0.1`；前端工作区已消费 revision `9`，后端和前端改动均尚未提交；后端代码中的评论行锁修复尚未发布
-- 总体判断：Phase 1 核心实现和上线验收已完成；Phase 2 点赞表已在 DBX `nas-mysql` 的 `how-blog-smaill` 建立，并通过真实 HTTP 并发验收；Redis 旧键验证因 RedisTemplate 序列化格式尚未确认而暂停
+- 当前阶段：Phase 2 点赞一致性首个切片代码、MySQL DDL、真实 HTTP 并发、旧 Redis 键迁移和全量默认测试已完成；Testcontainers 与更广泛的真实故障联调仍待完成；会话清理默认关闭
+- 当前接口契约：revision `9`、contract version `6.0.1`；后端已提交于 `8f37bbd`，前端 `backend-api-sync.json` 已消费 revision `9`；无需前端业务代码修改
+- 总体判断：Phase 1 核心实现和上线验收已完成；Phase 2 已通过真实 MySQL 表迁移核验、20 路 HTTP 并发、正确 Spring JDK serializer 旧键的真实 HTTP 迁移验收及 144 项全量测试（3 项外部测试跳过）。迁移验收使用隔离临时用户/评论和随机 JWT secret，关系补登记但计数保持 0，新缓存键写入成功，所有临时数据已清理
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -24,7 +24,7 @@
 - [x] 修复评论按 ID 查询与按文章查询的路由冲突，当前文章评论路径为 `GET /comment/article/{articleId}`。
 - [x] 建立前端接口契约、变更记录和机器可读状态文件。
 - [x] 验证全模块 `clean compile` 和 `test` 命令可执行。
-- [x] 默认全量 138 项测试通过、3 项外部测试默认跳过；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。此前核心 MySQL 事务验收通过，本轮未运行真实 Redis、MySQL 清理或浏览器联调。
+- [x] 最新全量 `mvn test` 144 项通过、0 失败、0 错误、3 项外部测试默认跳过；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。当前切片另已通过真实 MySQL DDL 核验和 HTTP 并发；未运行 MySQL 清理或浏览器联调。
 
 ## 3. 阶段进度
 
@@ -32,7 +32,7 @@
 | --- | --- | ---: | --- |
 | Phase 0 基线整理 | 已完成 | 100% | 构建、模块、契约和已知限制已记录 |
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
-| Phase 2 测试与数据一致性 | 进行中 | 45% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL 与 20 路 HTTP 并发通过；Redis 旧键格式及迁移验收、Testcontainers 尚未完成 |
+| Phase 2 测试与数据一致性 | 进行中 | 60% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移和全量 144 项测试通过；Testcontainers 尚未完成 |
 | Phase 3 配置、部署与可观测性 | 未开始 | 0% | 需要先确定运行环境和服务编排方式 |
 | Phase 4 博客核心产品能力 | 未开始 | 0% | 等安全和测试底座稳定后推进 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
@@ -99,7 +99,10 @@
 | AUTH-10 真实 Redis Lua 固定窗口 | 2026-09-23 | 2026-09-23 | DBX `nas-redis`，逻辑库 15；随机专用键，项目 Lua 脚本；额度 3/窗口 600 秒 | 6 次并行调用恰好 3 次放行、3 次返回正 TTL；计数为 3；拒绝不重置 TTL；测试键过期后请求重新放行并从 1 计数。专用键已精确清理，db15 `DBSIZE=0`。未覆盖 Spring HTTP 429/503、Redis 故障关闭或真实应用多实例 |
 | AUTH-10 上线验收 | 2026-09-23 | 2026-09-23 | 用户确认上线验收通过；详细环境、步骤和单项结果未提供 | 按用户确认登记通过；不据此声称会话清理已启用或执行了数据库删除 |
 | Phase 2 点赞一致性首个切片 | 2026-09-24 | 2026-09-24 | `mvn -pl how_article -am -Dtest=CommentServiceTest,ArticleControllerTest test`；43 项通过 | MySQL 唯一关系、原子计数、旧 Redis 键迁移、Redis 故障和控制器边界已覆盖；真实 MySQL/Redis 迁移与并发 HTTP 尚未执行 |
-| Phase 2 DBX/HTTP 联调暂停点 | 2026-09-24 |  | DBX `nas-mysql` 执行 `CREATE TABLE tb_comment_thumbup` 并核验；文章服务真实 HTTP 20 并发；后端 `mvn -pl how_article -am -Dtest=CommentServiceTest,ArticleControllerTest test` | DDL 已完成，未改写历史评论/点赞数据。目标库基线 3 评论、29 计数，目标 Redis db3 扫描未发现旧文本键。真实并发 20 请求为 1 成功、19 重复、0 5xx；首次并发复现 MySQL 1213 死锁，新增 `SELECT ... FOR UPDATE` 后复测通过。临时评论和 Redis 文本键已精确清理，临时 DBX 连接已移除，9004/9008 服务已停止。旧 Redis 键未完成端到端迁移验证：文本 Redis 键与 Spring 默认 RedisTemplate JDK 序列化键可能不一致。全量测试、真实旧键验收、前后端最终 diff、提交及推送均待继续。 |
+| Phase 2 DBX/HTTP 联调 | 2026-09-24 | 2026-09-24 | DBX `nas-mysql` 核验点赞表；文章服务真实 HTTP 20 并发；后端窄测试 43 项通过 | DDL 已完成，未改写历史评论/点赞数据。目标库基线 3 评论、29 计数；Redis db3 无旧文本键。20 请求为 1 成功、19 重复、0 5xx；首次并发复现 MySQL 1213，新增 `SELECT ... FOR UPDATE` 后复测通过。临时数据和 Redis 键已精确清理，临时 DBX 连接已移除，9004/9008 服务已停止。 |
+| Phase 2 全量回归与同步状态 | 2026-09-24 | 2026-09-24 | JDK 21 `mvn test`；Surefire 汇总 144 tests、0 failures、0 errors、3 skipped；前端 `npm --prefix /home/ubuntu/project/HowBlog-2.0-vueblog-vue test` 通过 | 前端同步指针记录 revision 9 / 后端 `8f37bbd`；契约测试覆盖会话轮换、限流重试、跨标签锁、退出、HTTP、校验和 WebSocket。后端契约头已修正为 revision 9/version 6.0.1；旧 Redis 键真实迁移验收随后完成，临时数据和服务均已清理。 |
+| Phase 2 旧 Redis 键真实迁移验收 | 2026-09-24 | 2026-09-24 | 同一临时 JWT secret 启动 9008/9004；真实 `POST /user/login` 和 `PUT /comment/thumbup/{id}`；DBX 核验 MySQL/Redis；端口最终释放 | 使用正确 Spring `JdkSerializationRedisSerializer` 旧键（75 字节）命中迁移分支：HTTP 返回 `20000`，关系表登记 1 行，评论计数保持 0，新 `thumbup:v2:` 缓存键存在。首次手工 key 编码探针未计入结果；3 个测试会话、2 条临时评论、1 个用户、关系和 Redis 键均已精确清理。 |
+| Phase 2 全量回归与同步状态 | 2026-09-24 | 2026-09-24 | JDK 21 `mvn test`；Surefire 汇总 144 tests、0 failures、0 errors、3 skipped；前端 `npm --prefix /home/ubuntu/project/HowBlog-2.0-vueblog-vue test` 通过 | 前端同步指针记录 revision 9 / 后端 `8f37bbd`；契约测试覆盖会话轮换、限流重试、跨标签锁、退出、HTTP、校验和 WebSocket。后端契约头已修正为 revision 9/version 6.0.1；本轮服务使用临时 JWT secret，未改变部署配置，会话清理保持关闭。 |
 
 ## 6. 变更记录
 
@@ -153,8 +156,8 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 从本暂停点继续：先检查 `RedisTemplate` 的 key/value serializer 和应用实际 Redis 地址/逻辑库。DBX 写入的普通字符串键不能直接作为旧键迁移验收，先证明 DBX `nas-redis` 与文章服务 Redis 确为同一实例，并生成应用序列化格式的专用旧键后再测试。
-2. 不要重复执行已成功的 MySQL DDL；确认 `tb_comment_thumbup` 仍存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
-3. Redis 旧键迁移验收完成后，执行后端全量 `mvn test` 和前端契约回归，更新本表和 revision 9 发布状态，再按用户请求提交并推送前后端变更。
+1. 为 Phase 2 增加可重复的 Testcontainers MySQL/Redis 验证，或记录受控本地集成测试配置。
+2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
+3. 进入 Phase 3 前继续保持会话清理默认关闭，并完成数据库、Redis、JWT secret、CORS 和 Docker Compose 的环境化配置。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。
 5. 在 Phase 3 完成数据库、Redis、JWT secret、CORS 和 Docker Compose 的环境化配置。

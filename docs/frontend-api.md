@@ -1,8 +1,8 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.0.0`
-> 当前同步 revision：`8`
-> 最后更新：`2026-09-22`
+> 当前契约版本：`6.0.1`
+> 当前同步 revision：`9`
+> 最后更新：`2026-09-24`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
 
@@ -568,7 +568,7 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - 已支持持久化登录会话、刷新轮换和当前会话退出；没有全设备退出或管理员撤销接口。过期会话/历史刷新摘要的有界清理已实现但默认关闭，须经运维确认保留策略、数据库权限和删除授权后开启，见 [admin-operations.md](admin-operations.md)。
 - 认证限流依赖用户服务 Redis，默认开启且故障关闭；当前自动化测试覆盖 MVC、模拟 Redis 和 H2 清理，真实 Redis Lua、多实例网络和 MySQL 清理验收尚未执行。固定窗口不是滑动窗口，窗口边界允许短时突发；不替代网关全局流量限制。
 - 文章和评论继续要求作者本人；数据库 `ADMIN` 目前仅用于标签管理，不拥有代改文章或评论的权限。角色管理无公开接口，初始化流程见 [admin-operations.md](admin-operations.md)。
-- 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)，真实 MySQL/Redis 联调仍需单独验收。
+- 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。已在隔离临时数据上通过真实 MySQL、Redis 和 HTTP 旧键迁移验收；生产部署仍需按目标环境复核连接、密钥和数据备份策略。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
 - 已有基础必填、非空白、非负计数和分页校验；最大文本长度、状态枚举、关联资源存在性仍未全面校验。
 - 已通过 H2 完整登录/刷新/退出事务与 MVC 测试、IM 处理器撤销测试；此前会话核心的真实 MySQL 事务验收已通过。本轮未执行真实浏览器、多实例 IM 或全链路 MySQL/Redis 联调。
