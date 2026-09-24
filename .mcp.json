@@ -4,7 +4,7 @@
       "type": "http",
       "url": "http://192.168.20.5:4224/mcp",
       "headers": {
-        "Authorization": "Bearer ${DBX_MCP_TOKEN}"
+        "Authorization": "Bearer 982492729d45fbc53b153b3dfe2851fc"
       }
     }
   }

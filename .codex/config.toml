@@ -1,3 +1,5 @@
 [mcp_servers.dbx]
 url = "http://192.168.20.5:4224/mcp"
-bearer_token_env_var = "DBX_MCP_TOKEN"
+
+[mcp_servers.dbx.http_headers]
+Authorization = "Bearer 982492729d45fbc53b153b3dfe2851fc"
