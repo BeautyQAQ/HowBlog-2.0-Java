@@ -74,3 +74,17 @@
 - H2 真实事务覆盖摘要分批、会话最终删除、保留边界、活跃/撤销会话保护、删除失败回滚和并发清理；调度测试覆盖默认关闭、数据库时间和故障重试。MVC 覆盖限流早于 JWT/JSON/密码查询、429/503、跨域重试头和伪造转发头。
 - 真实 Redis 测试默认跳过，只在显式设置 `HOW_AUTH_REDIS_TEST_PORT` 后连接 `127.0.0.1` 指定端口。准备隔离的无密码本机 Redis 后运行 `mvn -pl how_user -am test -Dtest=AuthRateLimiterRedisTest -Dsurefire.failIfNoSpecifiedTests=false`；测试使用随机前缀、最多 30 秒 TTL，不执行 FLUSHDB，也不删除其他键。覆盖两实例并发额度、TTL 不续期及到期恢复。
 - 本轮未找到可用 Redis 服务，未运行真实 Lua 或 MySQL 清理；旧 MySQL 测试授权不自动扩展为清理授权。正式启用前需补真实 Redis、MySQL 行锁/外键/回滚、多实例和浏览器验收。
+
+## 评论点赞真实存储集成测试
+
+评论点赞关系表、原子计数和 Redis 兼容缓存提供一条真实存储集成测试，默认跳过，只有显式设置 `HOW_ARTICLE_TEST_CONFIG` 指向配置文件才运行：
+
+```bash
+HOW_ARTICLE_TEST_CONFIG=/path/to/integration-test-config.yml \
+  mvn -pl how_article -am test -Dtest=CommentThumbupMySqlRedisTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+- 配置文件结构见 [integration-test-config.example.yml](integration-test-config.example.yml)：一个已执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql) 的隔离测试库，以及一个隔离 Redis 逻辑库。测试按应用默认的 JDK 序列化访问 Redis；值支持 `${ENV_VAR:default}` 占位符，避免把凭证写入文件。
+- 覆盖场景：首次点赞恰好一次原子计数、同用户重复点赞拒绝、旧 `thumbup_` 键迁移只登记关系不重复计数、同一评论同用户 20 路并发恰好一次成功、10 个用户并发全部成功、评论不存在时不写入；同时断言关系表唯一键、计数和 `thumbup:v2:` 缓存。
+- 数据边界：只创建 `thumbup-test-` 前缀的临时评论、随机用户 ID 和对应的 `thumbup_`/`thumbup:v2:` 键，成功和失败路径结束时都精确删除；不执行 DDL、不清库、不删除其他键，也不触碰既有评论和点赞计数。
+- 跳过只表示当前环境没有提供隔离配置，不表示行为已验证；运行前确认目标库和 Redis 属于可安全写入的测试环境。

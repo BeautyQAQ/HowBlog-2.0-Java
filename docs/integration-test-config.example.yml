@@ -1,0 +1,22 @@
+# 评论点赞真实存储集成测试配置示例（对应 HOW_ARTICLE_TEST_CONFIG）
+#
+# 用法：复制本文件到仓库外或未跟踪位置，填入隔离测试库与 Redis 的实际值，然后运行：
+#   HOW_ARTICLE_TEST_CONFIG=<本文件路径> \
+#     mvn -pl how_article -am test -Dtest=CommentThumbupMySqlRedisTest \
+#     -Dsurefire.failIfNoSpecifiedTests=false
+#
+# 注意：
+# - 目标库需已执行 docs/mysql-thumbup-migration.sql（包含 tb_comment_thumbup）。
+# - 使用隔离的测试库和 Redis 逻辑库；测试只创建并清理 thumbup-test- 前缀的临时数据。
+# - 不要把包含真实凭证的副本提交到仓库；值支持 ${ENV_VAR:default} 占位符。
+
+spring:
+  datasource:
+    url: jdbc:mysql://${HOW_ARTICLE_TEST_DB_HOST:127.0.0.1}:${HOW_ARTICLE_TEST_DB_PORT:3306}/how-blog-test?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${HOW_ARTICLE_TEST_DB_USER:}
+    password: ${HOW_ARTICLE_TEST_DB_PASSWORD:}
+  redis:
+    host: ${HOW_ARTICLE_TEST_REDIS_HOST:127.0.0.1}
+    port: ${HOW_ARTICLE_TEST_REDIS_PORT:6379}
+    password: ${HOW_ARTICLE_TEST_REDIS_PASSWORD:}
+    database: ${HOW_ARTICLE_TEST_REDIS_DATABASE:15}
