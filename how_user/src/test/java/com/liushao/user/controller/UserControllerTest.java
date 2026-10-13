@@ -21,6 +21,7 @@ import com.liushao.user.service.UserService;
 import com.liushao.user.service.AuthRateLimiter;
 import com.liushao.user.service.AuthRateLimiter.Scope;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -50,7 +51,7 @@ class UserControllerTest {
                         .header("Origin", "https://example.test").header("X-Forwarded-For", "198.51.100.1")
                         .contentType(MediaType.APPLICATION_JSON).content("{"))
                 .andExpect(status().isTooManyRequests()).andExpect(header().string("Retry-After", "7"))
-                .andExpect(header().string("Access-Control-Expose-Headers", "Retry-After"))
+                .andExpect(header().string("Access-Control-Expose-Headers", containsString("Retry-After")))
                 .andExpect(header().string("Cache-Control", "no-store")).andExpect(jsonPath("$.code").value(20001))
                 .andExpect(jsonPath("$.flag").value(false));
         verify(rateLimiter).check(scope, "127.0.0.1");
@@ -81,7 +82,7 @@ class UserControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*"))
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Retry-After"));
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, containsString("Retry-After")));
     }
 
     @ParameterizedTest

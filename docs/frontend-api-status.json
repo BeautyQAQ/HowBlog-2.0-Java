@@ -1,15 +1,16 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.1.0",
-  "revision": 10,
+  "contractVersion": "6.2.0",
+  "revision": 11,
   "updatedAt": "2026-10-13",
-  "latestChangeId": "API-20261013-010",
-  "latestChangeType": "configuration",
+  "latestChangeId": "API-20261013-011",
+  "latestChangeType": "observability",
   "breaking": false,
   "requiresFrontendAction": false,
   "changedAreas": [
-    "cors-configuration",
-    "service-port-configuration"
+    "http-request-correlation-id",
+    "service-health-endpoint",
+    "container-deployment"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

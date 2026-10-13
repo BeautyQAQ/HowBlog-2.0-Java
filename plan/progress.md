@@ -2,10 +2,10 @@
 
 ## 1. 当前状态
 
-- 更新时间：2026-10-13
-- 当前阶段：Phase 3 第一切片完成——端口、跨域来源与 MySQL/Redis 连接已支持环境变量覆盖（默认值不变），`@CrossOrigin` 收敛到共享配置，契约同步 revision `10`；下一阶段为 Phase 3 第二切片（Docker Compose、健康检查与 CI，用 NAS 主机的 Docker 验证）；会话清理默认关闭
-- 当前接口契约：revision `10`、contract version `6.1.0`（兼容性变更，前端无需改代码）；本轮改动待提交推送
-- 总体判断：Phase 1、Phase 2 已完成并有真实存储与全量测试依据；Phase 3 第一切片已通过全量 `mvn test` 155 项（4 项外部测试跳过）与配置包装后的 gated 点赞真实存储复测
+- 更新时间：2026-10-14
+- 当前阶段：Phase 3 第二切片代码完成——请求关联 ID（`X-Request-Id` 与日志 `requestId`）、三服务 `GET /actuator/health`、共用 Dockerfile 与 `docker-compose.yml`、CI 与敏感信息扫描已实现，契约同步 revision `11`；容器镜像构建与实际启动被环境阻塞（本机 Docker daemon 未运行，NAS 主机 SSH 认证未建立）；会话清理默认关闭
+- 当前接口契约：revision `11`、contract version `6.2.0`（兼容性新增，前端无需改代码）；本轮改动待提交推送
+- 总体判断：Phase 1、Phase 2 已完成并有真实存储与全量测试依据；Phase 3 第一切片已推送（`992c05c`），第二切片通过全量 `mvn test` 159 项（4 项外部测试跳过）、接口文档一致性与敏感信息扫描，容器运行尚未验证
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -24,7 +24,7 @@
 - [x] 修复评论按 ID 查询与按文章查询的路由冲突，当前文章评论路径为 `GET /comment/article/{articleId}`。
 - [x] 建立前端接口契约、变更记录和机器可读状态文件。
 - [x] 验证全模块 `clean compile` 和 `test` 命令可执行。
-- [x] 最新全量 `mvn test` 155 项、0 失败、0 错误、4 项外部测试默认跳过（含新增跨域与真实 WebSocket 跨源握手测试）；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。点赞切片已通过真实 MySQL DDL 核验、HTTP 并发和真实存储集成测试；未运行 MySQL 清理或浏览器联调。
+- [x] 最新全量 `mvn test` 159 项、0 失败、0 错误、4 项外部测试默认跳过（含跨域与真实 WebSocket 跨源握手测试、请求关联 ID 过滤器测试）；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。点赞切片已通过真实 MySQL DDL 核验、HTTP 并发和真实存储集成测试；未运行 MySQL 清理或浏览器联调。
 
 ## 3. 阶段进度
 
@@ -33,7 +33,7 @@
 | Phase 0 基线整理 | 已完成 | 100% | 构建、模块、契约和已知限制已记录 |
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
 | Phase 2 测试与数据一致性 | 已完成 | 100% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移、全量 145 项测试及受控本地真实存储集成测试（测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境再评估，真实 Redis/MySQL 宕机演练未执行（预期行为由单元测试与运维说明覆盖） |
-| Phase 3 配置、部署与可观测性 | 进行中 | 40% | 第一切片完成：端口、跨域来源、MySQL/Redis 连接环境变量化（默认值不变），共享 `CorsOrigins` 解析与三服务跨域配置、WebSocket 同源配置，契约 revision 10；第二切片待做：Docker Compose、健康检查、结构化日志与 CI |
+| Phase 3 配置、部署与可观测性 | 进行中 | 75% | 第一切片已推送（`992c05c`）：端口、跨域来源、MySQL/Redis 连接环境变量化；第二切片代码完成待提交：请求关联 ID 与日志 `requestId`、`/actuator/health`、三服务共用 Dockerfile 与 `docker-compose.yml`、CI 与敏感信息扫描，契约 revision 11；剩余：在可用 Docker 主机上验证镜像构建与实际启动，以及结构化 JSON 日志与指标导出 |
 | Phase 4 博客核心产品能力 | 未开始 | 0% | 等安全和测试底座稳定后推进 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
 
@@ -75,7 +75,9 @@
 - [x] MySQL 点赞关系迁移已在 `nas-mysql` 执行；真实 HTTP 20 路同用户并发为 1 次成功、19 次重复、0 次 5xx；旧 Redis 键已按应用实际的 Spring JDK 序列化键完成真实 HTTP 迁移验收。
 - [x] 可重复的真实存储集成测试 `CommentThumbupMySqlRedisTest` 已提供（`HOW_ARTICLE_TEST_CONFIG` 显式启用，默认跳过），覆盖首次/重复/旧键迁移/同用户 20 路并发/10 用户并发/评论不存在并自清理；2026-10-12 经用户授权在测试环境库（`nas-mysql` how-blog-smaill、`nas-redis` db3）实际运行通过，运行前后评论 3/关系 0/计数总和 29/Redis 键数 20 完全一致，无 `thumbup-test-` 残留。Testcontainers 在当前环境不可行（Docker daemon 未运行、无免密 sudo、Docker Hub 连接超时），待 CI/Docker 环境再评估。
 - [x] 端口、跨域来源与 MySQL/Redis 连接已支持 `${HOW_*:现值}` 环境变量覆盖；按用户决定保留现有凭证值（内网组网），不做敏感信息清理。
-- [ ] 部署可复现性（Docker Compose、健康检查、结构化日志与 CI）仍未完成，属 Phase 3 第二切片。
+- [x] 请求关联 ID（`X-Request-Id` 与日志 MDC `requestId`，过滤入站换行字符）、三服务 `GET /actuator/health`、共用 Dockerfile、`docker-compose.yml`（隔离 MySQL/Redis，数据端口不映射到宿主机）与 CI（JDK 21 编译测试、接口文档一致性、敏感信息扫描）已实现；契约同步 revision `11`。
+- [!] 容器化验证被环境阻塞：本机 Docker daemon 未运行且无免密 sudo，Docker Hub 连接超时；NAS 主机的 SSH 免密与密码登录均被拒（本机未安装 `sshpass`、未配置密钥），TCP 2375 无响应。镜像构建与 `docker compose up` 尚未实际执行，也未向 NAS 主机写入任何文件或镜像。
+- [ ] 结构化日志目前只落地请求关联 ID 与日志格式；JSON 结构化输出、指标导出和链路追踪尚未实现。
 
 ## 5. 任务验收记录
 
@@ -108,6 +110,7 @@
 | Phase 2 受控本地真实存储测试 | 2026-10-11 | 2026-10-11 | JDK 21 `mvn -pl how_article -am test` 44 项、1 项跳过；全量 `mvn test` 145 项、0 失败、0 错误、4 项跳过；示例 yml 语法校验通过 | 新增 gated 测试、脱敏示例配置与运维说明；接口契约不变（revision 9）。未针对真实 MySQL/Redis 运行，待隔离配置与写入授权；Testcontainers 受环境阻塞（Docker daemon 未运行、无免密 sudo、Docker Hub 超时） |
 | Phase 2 真实存储验收运行 | 2026-10-12 | 2026-10-12 | `HOW_ARTICLE_TEST_CONFIG` 指向文章服务既有 application.yml（不新建含凭证文件、命令行不出现凭证）；`mvn -pl how_article -am test -Dtest=CommentThumbupMySqlRedisTest -Dsurefire.failIfNoSpecifiedTests=false`；DBX 运行前后只读对照 | 1 项通过、0 失败（4.3 秒），6 组场景在真实 MySQL + Redis 上全部通过。运行前后 `nas-mysql` how-blog-smaill：评论 3、关系 0、计数总和 29、`thumbup-test-` 残留 0；`nas-redis` db3 DBSIZE 20 → 20。用户明确授权使用该测试环境库；未执行 DDL，既有数据未改动 |
 | Phase 3 第一切片（配置环境化） | 2026-10-13 | 2026-10-13 | JDK 21 全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；`HOW_ARTICLE_TEST_CONFIG` 指向包装后的 `application.yml` 复跑 gated 点赞真实存储测试 1 项通过；新增跨域单元/MVC/真实 WebSocket 跨源测试 | 端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 环境变量覆盖（默认值不变，凭证按用户决定保留）；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与三服务 `WebMvcConfigurer`；契约 revision 10 / `6.1.0`，前端无需改代码。未提交 |
+| Phase 3 第二切片（容器化与可观测性） | 2026-10-13 | 2026-10-14 | JDK 21 全量 `mvn test` 159 项、0 失败、0 错误、4 跳过；`bash scripts/check-api-docs.sh` 输出“接口文档一致：revision 11 / API-20261013-011 / contract 6.2.0”；`bash scripts/check-secrets.sh` 通过 | 新增请求关联 ID 过滤器（4 项测试，含伪造换行请求头不回显）、三服务 CORS 暴露 `X-Request-Id`、`/actuator/health`、共用 Dockerfile、`docker-compose.yml`、CI；契约 revision 11 / `6.2.0`。容器镜像构建与真实启动未验证（Docker 与 NAS 主机均阻塞），未连接任何真实环境、未执行 DDL |
 
 ## 6. 变更记录
 
@@ -171,6 +174,14 @@
 - 测试：`CorsOriginsTest` 3 项、`CorsConfigurationTest` 3 项、三服务默认全开断言 3 项、`WebSocketOriginTest` 1 项（真实握手：允许来源成功、拒绝来源失败）。全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；gated 点赞真实存储测试在配置包装后复跑通过。
 - 契约同步 revision `10` / contract version `6.1.0`（兼容性）：`docs/frontend-api.md`、changelog、status 三件套已更新，README 与 admin-operations 增加环境变量表。未提交。
 
+### 2026-10-14
+
+- 完成 Phase 3 第二切片代码：`how_common` 新增 `RequestCorrelationFilter` 与 `WebObservabilityConfiguration`，每个响应带 `X-Request-Id`，同一 ID 写入日志 MDC `requestId`；入站头只接受 1–64 位字母、数字、`-`、`_`、`.`，控制字符被过滤且不回显。三服务 `AuthWebConfig` 暴露该响应头（用户服务同时暴露 `Retry-After`）。
+- 三个模块新增 `spring-boot-starter-actuator` 与 `spring-boot-maven-plugin`，暴露无需认证的 `GET /actuator/health`（只返回 `status`，不返回依赖细节）；新增三服务共用 `docker/service.Dockerfile` 与 `docker-compose.yml`（MySQL、Redis 与三个服务，数据端口不映射宿主机，`.env.example` 提供本地占位值，`.env` 已忽略）。
+- 新增 `scripts/check-api-docs.sh`（校验契约三件套自洽：状态字段、changelog 条目编号、最新条目含“前端动作”、契约头部 revision 与 contractVersion 一致）与 `scripts/check-secrets.sh`（拦截私钥、云厂商与平台令牌、JWT 形态字符串和本地环境文件），并在 `.github/workflows/ci.yml` 中以 JDK 21 编译测试、打包、契约检查和敏感信息扫描执行。
+- 验证：全量 `mvn test` 159 项、0 失败、0 错误、4 项外部存储测试默认跳过（新增 `RequestCorrelationFilterTest` 4 项）；契约检查输出 revision 11 / API-20261013-011 / contract 6.2.0；敏感信息扫描通过。契约同步 revision `11` / `6.2.0`（兼容性新增）。
+- 未验证与阻塞：本机 Docker daemon 未运行、Docker Hub 超时，NAS 主机 SSH 免密与密码登录均被拒且本机无 `sshpass`，TCP 2375 无响应，因此镜像构建与 `docker compose up` 未执行；未连接真实 MySQL/Redis，未执行 DDL 或远程写入，NAS 主机未被写入任何内容。
+
 后续每次开发完成一个任务后，必须同步更新：
 
 1. 上方阶段状态和任务勾选。
@@ -182,7 +193,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 开始 Phase 3 第二切片：编写 `docker-compose.yml` 与三个服务的 Dockerfile（MySQL、Redis、三服务），用 NAS 主机的 Docker 验证启动（连接信息见本地记忆，不入库）；随后补 `/actuator/health` 健康检查、结构化日志与请求关联 ID、CI（JDK 21 编译/测试/接口文档检查/敏感信息扫描）。不要为验证而改动现有默认配置或写入真实业务数据。
+1. 继续 Phase 3：第二切片代码已写完，下一步是在可用的 Docker 主机上验证 `docker compose up -d --build` 与三个 `/actuator/health`。本机 daemon 未运行；NAS 主机需先建立 SSH 认证方式（安装 `sshpass`、配置密钥，或由用户执行命令），连接信息只在本地记忆、不入库。验证前不向 NAS 主机写入文件或镜像，不为验证改动现有默认配置，不写入真实业务数据。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。

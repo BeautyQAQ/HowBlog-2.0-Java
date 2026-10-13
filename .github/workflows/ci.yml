@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    name: 编译与测试（JDK 21）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 确认构建入口使用 JDK 21
+        run: mvn -v
+
+      - name: 编译并执行全部测试
+        run: mvn -B -ntp clean test
+
+      - name: 打包可执行 jar
+        run: mvn -B -ntp -DskipTests package
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/**'
+          if-no-files-found: ignore
+
+  contract-and-secrets:
+    name: 接口文档与敏感信息检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验接口契约三件套一致性
+        run: bash scripts/check-api-docs.sh
+
+      - name: 扫描敏感信息
+        run: bash scripts/check-secrets.sh
+
+# 说明：
+# - 真实存储集成测试（CommentThumbupMySqlRedisTest、AuthSessionMySqlTest 等）默认跳过，
+#   只有显式提供 HOW_ARTICLE_TEST_CONFIG / HOW_AUTH_TEST_CONFIG 才运行，CI 不连接外部数据库。
+# - contract-and-secrets 只检查契约文件自洽性和明确禁止提交的敏感信息，
+#   不检查既有内网测试环境连接配置（见 scripts/check-secrets.sh 的说明和 plan/progress.md 记录的决定）。

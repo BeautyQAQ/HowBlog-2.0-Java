@@ -34,6 +34,6 @@ public class AuthWebConfig implements WebMvcConfigurer {
                 .allowedOrigins(CorsOrigins.allowedOrigins(allowedOrigins))
                 .allowedMethods("*")
                 .allowedHeaders("*")
-                .exposedHeaders("Retry-After");
+                .exposedHeaders("Retry-After", "X-Request-Id");
     }
 }

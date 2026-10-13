@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.vscode
+*.iml
+*.md
+.env
+.env.*
+docker-compose.override.yml
+**/target
+node_modules

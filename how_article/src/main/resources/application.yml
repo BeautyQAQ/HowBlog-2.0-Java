@@ -23,3 +23,14 @@ how:
     jwt:
       secret: ${HOW_AUTH_JWT_SECRET:}
       access-token-ttl-seconds: ${HOW_AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS:1800}
+logging:
+  pattern:
+    level: "%5p [requestId:%X{requestId:-}]"
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

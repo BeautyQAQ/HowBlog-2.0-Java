@@ -29,6 +29,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
         registry.addMapping("/**")
                 .allowedOrigins(CorsOrigins.allowedOrigins(allowedOrigins))
                 .allowedMethods("*")
-                .allowedHeaders("*");
+                .allowedHeaders("*")
+                .exposedHeaders("X-Request-Id");
     }
 }

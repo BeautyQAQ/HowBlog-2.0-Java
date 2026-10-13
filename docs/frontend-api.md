@@ -1,8 +1,8 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.0.1`
-> 当前同步 revision：`9`
-> 最后更新：`2026-09-24`
+> 当前契约版本：`6.2.0`
+> 当前同步 revision：`11`
+> 最后更新：`2026-10-13`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
 
@@ -41,6 +41,7 @@ REST 接口路径均相对于对应服务的 Base URL。例如，文章列表的
 
 - 请求体和成功响应使用 JSON；发送请求时使用 `Content-Type: application/json`。
 - 三个服务默认允许所有跨域来源（`Access-Control-Allow-Origin: *`），可用环境变量 `HOW_CORS_ALLOWED_ORIGINS` 配置逗号分隔的来源列表，WebSocket 握手使用同一配置；部署环境仍应根据网关和安全策略限制来源。
+- 每个 HTTP 响应都带 `X-Request-Id` 响应头，值为该请求的关联 ID，同一个 ID 也写入服务端日志；跨域响应已暴露该响应头。客户端可以自带 `X-Request-Id` 传入自己的追踪 ID，但只接受 1 到 64 位的字母、数字、`-`、`_`、`.`；不符合要求或未提供时，服务端生成新的 ID。
 - 登录成功后返回短期 Bearer JWT。需要认证的写接口必须发送 `Authorization: Bearer <token>`；公开查询接口和登录接口不要求该请求头。
 - 访问令牌默认最多有效 1800 秒，不超过所属会话的绝对期限。每次登录创建独立数据库会话，绝对有效期为 7 天；刷新不延长这 7 天。
 - 访问 token 包含服务端会话 ID（`sid`），三个服务在使用 token 时都检查会话未撤销、未到期、归属用户匹配且用户仍存在。旧的不带会话 ID 的 token 不再可用，升级后需要重新登录。
@@ -110,6 +111,16 @@ REST 接口返回 `Result`：
 - 新增标签：`labelname` 必填且非空白；`count`、`fans` 如提供则必须大于等于 0。
 - 编辑文章的 `title`、`content`，评论的 `content`，标签的 `labelname`：未提供或为 `null` 时保留原值；提供字符串时不能为空白。标签编辑的 `count`、`fans` 如提供也必须大于等于 0。
 - 本轮不新增最大文本长度、状态枚举、评论关联文章/父评论存在性约束；这些不属于已经实现的校验。
+
+## 服务健康检查
+
+三个服务都提供无需认证的 `GET /actuator/health`，供部署探活和容器健康检查使用：
+
+```json
+{"status":"UP"}
+```
+
+该接口不使用 `Result` 统一响应体，只返回 `status`（依赖异常时为 `DOWN`），不包含数据库、Redis 等依赖细节，也不受认证和业务限流影响。它不是业务接口，前端不应依赖它的响应结构。
 
 ## 数据模型
 

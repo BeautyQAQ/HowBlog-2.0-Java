@@ -33,3 +33,9 @@ build/
 .vscode/
 
 /src/main/resources/logs/
+
+### 本地环境覆盖文件 ###
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
