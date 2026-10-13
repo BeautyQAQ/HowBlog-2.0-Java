@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -72,6 +73,15 @@ class UserControllerTest {
                 .andExpect(status().isServiceUnavailable()).andExpect(header().string("Retry-After", "5"))
                 .andExpect(jsonPath("$.message").value("服务暂时不可用，请稍后重试"));
         verifyNoInteractions(userDao, sessions, refreshTokens);
+    }
+
+    @Test
+    void allowsAnyOriginByDefaultAndKeepsRetryAfterExposed() throws Exception {
+        mvc.perform(post("/user/login").header(HttpHeaders.ORIGIN, "https://example.test")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*"))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Retry-After"));
     }
 
     @ParameterizedTest

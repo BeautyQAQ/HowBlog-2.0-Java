@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.0.1",
-  "revision": 9,
-  "updatedAt": "2026-09-24",
-  "latestChangeId": "API-20260924-009",
-  "latestChangeType": "fix",
+  "contractVersion": "6.1.0",
+  "revision": 10,
+  "updatedAt": "2026-10-13",
+  "latestChangeId": "API-20261013-010",
+  "latestChangeType": "configuration",
   "breaking": false,
   "requiresFrontendAction": false,
   "changedAreas": [
-    "comment-thumbup-consistency",
-    "comment-thumbup-database-migration"
+    "cors-configuration",
+    "service-port-configuration"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

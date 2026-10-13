@@ -88,3 +88,20 @@ HOW_ARTICLE_TEST_CONFIG=/path/to/integration-test-config.yml \
 - 覆盖场景：首次点赞恰好一次原子计数、同用户重复点赞拒绝、旧 `thumbup_` 键迁移只登记关系不重复计数、同一评论同用户 20 路并发恰好一次成功、10 个用户并发全部成功、评论不存在时不写入；同时断言关系表唯一键、计数和 `thumbup:v2:` 缓存。
 - 数据边界：只创建 `thumbup-test-` 前缀的临时评论、随机用户 ID 和对应的 `thumbup_`/`thumbup:v2:` 键，成功和失败路径结束时都精确删除；不执行 DDL、不清库、不删除其他键，也不触碰既有评论和点赞计数。
 - 跳过只表示当前环境没有提供隔离配置，不表示行为已验证；运行前确认目标库和 Redis 属于可安全写入的测试环境。
+
+## 服务配置环境变量（Phase 3）
+
+三个服务的端口、MySQL 与跨域来源支持环境变量覆盖；未设置时使用 `application.yml` 中的默认值，默认值保持不变。
+
+| 环境变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `HOW_USER_PORT` / `HOW_BASE_PORT` / `HOW_ARTICLE_PORT` | 9008 / 9001 / 9004 | 服务 HTTP 端口 |
+| `HOW_USER_DB_URL` / `HOW_BASE_DB_URL` / `HOW_ARTICLE_DB_URL` | 当前连接串 | MySQL 连接串，含库名与连接参数 |
+| `HOW_USER_DB_USER` / `HOW_BASE_DB_USER` / `HOW_ARTICLE_DB_USER` | `root` | MySQL 用户名 |
+| `HOW_USER_DB_PASSWORD` / `HOW_BASE_DB_PASSWORD` / `HOW_ARTICLE_DB_PASSWORD` | 当前密码 | MySQL 密码 |
+| `HOW_ARTICLE_REDIS_HOST` / `HOW_ARTICLE_REDIS_PORT` / `HOW_ARTICLE_REDIS_PASSWORD` / `HOW_ARTICLE_REDIS_DATABASE` | 当前 Redis 配置 | 文章服务点赞缓存 Redis |
+| `HOW_CORS_ALLOWED_ORIGINS` | `*` | REST 与 WebSocket 允许的跨域来源，逗号分隔；空白按 `*` 处理 |
+
+- 用户服务的 `HOW_AUTH_REDIS_*`、认证限流与清理变量见上文各节。
+- 跨域默认保持允许所有来源；收紧来源时 REST 与 WebSocket 共用同一变量，部署后需验证预检请求和浏览器直连。
+- 使用环境变量或未跟踪的本地覆盖文件调整配置，不要为本地开发直接覆盖仓库中的其他环境配置。

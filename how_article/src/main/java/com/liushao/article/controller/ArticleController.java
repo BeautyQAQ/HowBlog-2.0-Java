@@ -22,7 +22,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("article")
-@CrossOrigin
 public class ArticleController {
 
     @Autowired

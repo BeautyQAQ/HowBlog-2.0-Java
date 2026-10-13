@@ -71,6 +71,19 @@ how-blog-smaill
 Redis: 6379，逻辑数据库 3
 ```
 
+三个服务的关键配置支持环境变量覆盖，未设置时使用 `application.yml` 中的默认值（默认值即当前测试环境配置）：
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `HOW_USER_PORT` / `HOW_BASE_PORT` / `HOW_ARTICLE_PORT` | 9008 / 9001 / 9004 | 服务 HTTP 端口 |
+| `HOW_USER_DB_URL` / `HOW_BASE_DB_URL` / `HOW_ARTICLE_DB_URL` | `application.yml` 中的连接串 | MySQL 连接串 |
+| `HOW_USER_DB_USER` / `HOW_BASE_DB_USER` / `HOW_ARTICLE_DB_USER` | `root` | MySQL 用户名 |
+| `HOW_USER_DB_PASSWORD` / `HOW_BASE_DB_PASSWORD` / `HOW_ARTICLE_DB_PASSWORD` | `application.yml` 中的密码 | MySQL 密码 |
+| `HOW_ARTICLE_REDIS_HOST` / `HOW_ARTICLE_REDIS_PORT` / `HOW_ARTICLE_REDIS_PASSWORD` / `HOW_ARTICLE_REDIS_DATABASE` | `application.yml` 中的 Redis 配置 | 文章服务点赞缓存 |
+| `HOW_CORS_ALLOWED_ORIGINS` | `*` | 三个服务与 WebSocket 允许的跨域来源，逗号分隔 |
+
+用户服务的认证限流、会话清理和 Redis 变量见 [docs/admin-operations.md](docs/admin-operations.md)。
+
 首次运行前，执行 [docs/mysql-init.sql](docs/mysql-init.sql) 创建 MySQL 数据库及所需业务表。
 
 ## 编译项目

@@ -2,10 +2,10 @@
 
 ## 1. 当前状态
 
-- 更新时间：2026-10-12
-- 当前阶段：Phase 2 已完成——点赞一致性切片、真实 MySQL/Redis/HTTP 验收、全量默认测试及可重复的真实存储集成测试 `CommentThumbupMySqlRedisTest`（已在测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境可用后再评估；下一阶段为 Phase 3 配置环境化；会话清理默认关闭
-- 当前接口契约：revision `9`、contract version `6.0.1`；后端已提交于 `8f37bbd`，前端 `backend-api-sync.json` 已消费 revision `9`；本轮为测试与运维文档改动，契约未变化
-- 总体判断：Phase 1 核心实现和上线验收已完成；Phase 2 已通过真实 MySQL 表迁移核验、20 路 HTTP 并发、正确 Spring JDK serializer 旧键的真实 HTTP 迁移验收、145 项全量测试（4 项外部测试默认跳过）以及 2026-10-12 在测试环境库上的真实存储集成测试（6 组场景通过，运行前后既有数据与 Redis 键数完全一致）
+- 更新时间：2026-10-13
+- 当前阶段：Phase 3 第一切片完成——端口、跨域来源与 MySQL/Redis 连接已支持环境变量覆盖（默认值不变），`@CrossOrigin` 收敛到共享配置，契约同步 revision `10`；下一阶段为 Phase 3 第二切片（Docker Compose、健康检查与 CI，用 NAS 主机的 Docker 验证）；会话清理默认关闭
+- 当前接口契约：revision `10`、contract version `6.1.0`（兼容性变更，前端无需改代码）；本轮改动待提交推送
+- 总体判断：Phase 1、Phase 2 已完成并有真实存储与全量测试依据；Phase 3 第一切片已通过全量 `mvn test` 155 项（4 项外部测试跳过）与配置包装后的 gated 点赞真实存储复测
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -24,7 +24,7 @@
 - [x] 修复评论按 ID 查询与按文章查询的路由冲突，当前文章评论路径为 `GET /comment/article/{articleId}`。
 - [x] 建立前端接口契约、变更记录和机器可读状态文件。
 - [x] 验证全模块 `clean compile` 和 `test` 命令可执行。
-- [x] 最新全量 `mvn test` 145 项、0 失败、0 错误、4 项外部测试默认跳过（含新增的点赞真实存储测试）；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。点赞切片此前已通过真实 MySQL DDL 核验和 HTTP 并发；未运行 MySQL 清理或浏览器联调。
+- [x] 最新全量 `mvn test` 155 项、0 失败、0 错误、4 项外部测试默认跳过（含新增跨域与真实 WebSocket 跨源握手测试）；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。点赞切片已通过真实 MySQL DDL 核验、HTTP 并发和真实存储集成测试；未运行 MySQL 清理或浏览器联调。
 
 ## 3. 阶段进度
 
@@ -33,11 +33,11 @@
 | Phase 0 基线整理 | 已完成 | 100% | 构建、模块、契约和已知限制已记录 |
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
 | Phase 2 测试与数据一致性 | 已完成 | 100% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移、全量 145 项测试及受控本地真实存储集成测试（测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境再评估，真实 Redis/MySQL 宕机演练未执行（预期行为由单元测试与运维说明覆盖） |
-| Phase 3 配置、部署与可观测性 | 未开始 | 0% | 需要先确定运行环境和服务编排方式 |
+| Phase 3 配置、部署与可观测性 | 进行中 | 40% | 第一切片完成：端口、跨域来源、MySQL/Redis 连接环境变量化（默认值不变），共享 `CorsOrigins` 解析与三服务跨域配置、WebSocket 同源配置，契约 revision 10；第二切片待做：Docker Compose、健康检查、结构化日志与 CI |
 | Phase 4 博客核心产品能力 | 未开始 | 0% | 等安全和测试底座稳定后推进 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
 
-## 4. 当前迭代：Phase 1 身份认证与安全边界
+## 4. 迭代记录：Phase 1 身份认证与安全边界
 
 ### 待办顺序
 
@@ -74,7 +74,8 @@
 - [x] 用户已确认独立 MySQL 8 配置和建表/测试写入授权；认证表与基础事务测试通过。不得将该次授权扩展为任意业务数据修改。
 - [x] MySQL 点赞关系迁移已在 `nas-mysql` 执行；真实 HTTP 20 路同用户并发为 1 次成功、19 次重复、0 次 5xx；旧 Redis 键已按应用实际的 Spring JDK 序列化键完成真实 HTTP 迁移验收。
 - [x] 可重复的真实存储集成测试 `CommentThumbupMySqlRedisTest` 已提供（`HOW_ARTICLE_TEST_CONFIG` 显式启用，默认跳过），覆盖首次/重复/旧键迁移/同用户 20 路并发/10 用户并发/评论不存在并自清理；2026-10-12 经用户授权在测试环境库（`nas-mysql` how-blog-smaill、`nas-redis` db3）实际运行通过，运行前后评论 3/关系 0/计数总和 29/Redis 键数 20 完全一致，无 `thumbup-test-` 残留。Testcontainers 在当前环境不可行（Docker daemon 未运行、无免密 sudo、Docker Hub 连接超时），待 CI/Docker 环境再评估。
-- [ ] JWT secret、数据库和 Redis 配置仍需进一步完成环境变量化和敏感信息清理。
+- [x] 端口、跨域来源与 MySQL/Redis 连接已支持 `${HOW_*:现值}` 环境变量覆盖；按用户决定保留现有凭证值（内网组网），不做敏感信息清理。
+- [ ] 部署可复现性（Docker Compose、健康检查、结构化日志与 CI）仍未完成，属 Phase 3 第二切片。
 
 ## 5. 任务验收记录
 
@@ -106,6 +107,7 @@
 | Phase 2 全量回归与同步状态 | 2026-09-24 | 2026-09-24 | JDK 21 `mvn test`；Surefire 汇总 144 tests、0 failures、0 errors、3 skipped；前端 `npm --prefix /home/ubuntu/project/HowBlog-2.0-vueblog-vue test` 通过 | 前端同步指针记录 revision 9 / 后端 `8f37bbd`；契约测试覆盖会话轮换、限流重试、跨标签锁、退出、HTTP、校验和 WebSocket。后端契约头已修正为 revision 9/version 6.0.1；本轮服务使用临时 JWT secret，未改变部署配置，会话清理保持关闭。 |
 | Phase 2 受控本地真实存储测试 | 2026-10-11 | 2026-10-11 | JDK 21 `mvn -pl how_article -am test` 44 项、1 项跳过；全量 `mvn test` 145 项、0 失败、0 错误、4 项跳过；示例 yml 语法校验通过 | 新增 gated 测试、脱敏示例配置与运维说明；接口契约不变（revision 9）。未针对真实 MySQL/Redis 运行，待隔离配置与写入授权；Testcontainers 受环境阻塞（Docker daemon 未运行、无免密 sudo、Docker Hub 超时） |
 | Phase 2 真实存储验收运行 | 2026-10-12 | 2026-10-12 | `HOW_ARTICLE_TEST_CONFIG` 指向文章服务既有 application.yml（不新建含凭证文件、命令行不出现凭证）；`mvn -pl how_article -am test -Dtest=CommentThumbupMySqlRedisTest -Dsurefire.failIfNoSpecifiedTests=false`；DBX 运行前后只读对照 | 1 项通过、0 失败（4.3 秒），6 组场景在真实 MySQL + Redis 上全部通过。运行前后 `nas-mysql` how-blog-smaill：评论 3、关系 0、计数总和 29、`thumbup-test-` 残留 0；`nas-redis` db3 DBSIZE 20 → 20。用户明确授权使用该测试环境库；未执行 DDL，既有数据未改动 |
+| Phase 3 第一切片（配置环境化） | 2026-10-13 | 2026-10-13 | JDK 21 全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；`HOW_ARTICLE_TEST_CONFIG` 指向包装后的 `application.yml` 复跑 gated 点赞真实存储测试 1 项通过；新增跨域单元/MVC/真实 WebSocket 跨源测试 | 端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 环境变量覆盖（默认值不变，凭证按用户决定保留）；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与三服务 `WebMvcConfigurer`；契约 revision 10 / `6.1.0`，前端无需改代码。未提交 |
 
 ## 6. 变更记录
 
@@ -160,6 +162,14 @@
 - 用户决定：本轮改动提交并推送 master；真实存储验收可直接使用该测试环境的库。
 - 以 `HOW_ARTICLE_TEST_CONFIG` 指向文章服务既有 `application.yml` 运行 `CommentThumbupMySqlRedisTest`，不新建含凭证文件、命令行不出现凭证；1 项通过、0 失败，6 组场景（首次/重复/旧键迁移/同用户 20 路并发/10 用户并发/评论不存在）在真实 MySQL + Redis 上全部通过。
 - DBX 只读对照：运行前后评论 3、关系 0、计数总和 29、`thumbup-test-` 残留 0，Redis db3 DBSIZE 20 → 20；既有数据与键未被触碰。Phase 2 登记为已完成，Testcontainers 待 CI/Docker 环境再评估。
+- Phase 3 第一切片决策（用户于暂停前确认）：数据库/Redis 凭证不动（内网组网，不视为泄漏风险）；CORS 来源可配置且默认保持全开（兼容性契约记录）；Docker 相关工作使用 NAS 主机上的 Docker（连接信息仅保存在本地记忆，不入库）。实现待下次会话开始，本轮未改代码。
+
+### 2026-10-13
+
+- 完成 Phase 3 第一切片：三个服务端口改为 `${HOW_*_PORT:默认}`，新增 `HOW_CORS_ALLOWED_ORIGINS`（默认 `*`），MySQL/Redis 连接加 `${HOW_*:现值}` 包装；凭证值按用户决定不变。
+- 新增共享 `com.liushao.web.CorsOrigins` 解析（空白→`*`、逗号分割、去空白、去重）；四个控制器的 `@CrossOrigin` 收敛到各服务 `AuthWebConfig.addCorsMappings`（仅用户服务暴露 `Retry-After`）；WebSocket 使用同一来源配置。
+- 测试：`CorsOriginsTest` 3 项、`CorsConfigurationTest` 3 项、三服务默认全开断言 3 项、`WebSocketOriginTest` 1 项（真实握手：允许来源成功、拒绝来源失败）。全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；gated 点赞真实存储测试在配置包装后复跑通过。
+- 契约同步 revision `10` / contract version `6.1.0`（兼容性）：`docs/frontend-api.md`、changelog、status 三件套已更新，README 与 admin-operations 增加环境变量表。未提交。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -172,7 +182,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 开始 Phase 3：先将三个服务的 MySQL、Redis（文章服务仍为硬编码）、CORS 来源和端口改为环境变量或未跟踪本地覆盖配置，并提供脱敏示例与本地启动说明；再补 Docker Compose（当前环境 Docker daemon 未运行，Compose 可先编写、待环境可用后验证）、健康检查与 CI。Testcontainers 随 CI 一并评估。
+1. 开始 Phase 3 第二切片：编写 `docker-compose.yml` 与三个服务的 Dockerfile（MySQL、Redis、三服务），用 NAS 主机的 Docker 验证启动（连接信息见本地记忆，不入库）；随后补 `/actuator/health` 健康检查、结构化日志与请求关联 ID、CI（JDK 21 编译/测试/接口文档检查/敏感信息扫描）。不要为验证而改动现有默认配置或写入真实业务数据。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。

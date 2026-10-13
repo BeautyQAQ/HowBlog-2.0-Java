@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -179,6 +180,13 @@ class ArticleControllerTest {
         when(commentDao.findByArticleidOrderByPublishdateDesc("one")).thenReturn(List.of());
         mvc.perform(get("/comment/article/one")).andExpect(status().isOk()).andExpect(jsonPath("$.data").isArray());
         verify(commentDao).findByArticleidOrderByPublishdateDesc("one");
+    }
+
+    @Test
+    void allowsAnyOriginByDefault() throws Exception {
+        mvc.perform(get("/article").header(HttpHeaders.ORIGIN, "https://example.test"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*"));
     }
 
     @Test

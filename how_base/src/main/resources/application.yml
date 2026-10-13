@@ -1,6 +1,6 @@
 server:
   #服务端口
-  port: 9001
+  port: ${HOW_BASE_PORT:9001}
 spring:
   application:
     #指定服务名
@@ -8,13 +8,15 @@ spring:
   #数据源配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://192.168.20.5:3306/how-blog-smaill?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true
-    username: root
-    password: "ssyhsup"
+    url: ${HOW_BASE_DB_URL:jdbc:mysql://192.168.20.5:3306/how-blog-smaill?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true}
+    username: ${HOW_BASE_DB_USER:root}
+    password: "${HOW_BASE_DB_PASSWORD:ssyhsup}"
   jpa:
     hibernate:
       ddl-auto: none
 how:
+  cors:
+    allowed-origins: ${HOW_CORS_ALLOWED_ORIGINS:*}
   auth:
     jwt:
       secret: ${HOW_AUTH_JWT_SECRET:}

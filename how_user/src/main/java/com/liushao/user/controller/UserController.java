@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("user")
-@CrossOrigin(exposedHeaders = "Retry-After")
 public class UserController {
 
     private final UserService userService;
