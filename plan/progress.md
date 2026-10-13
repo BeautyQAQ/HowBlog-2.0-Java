@@ -182,6 +182,7 @@
 - 验证：全量 `mvn test` 159 项、0 失败、0 错误、4 项外部存储测试默认跳过（新增 `RequestCorrelationFilterTest` 4 项）；契约检查输出 revision 11 / API-20261013-011 / contract 6.2.0；敏感信息扫描通过。契约同步 revision `11` / `6.2.0`（兼容性新增）。
 - 未验证与阻塞：本机 Docker daemon 未运行、Docker Hub 超时，NAS 主机 SSH 免密与密码登录均被拒且本机无 `sshpass`，TCP 2375 无响应，因此镜像构建与 `docker compose up` 未执行；未连接真实 MySQL/Redis，未执行 DDL 或远程写入，NAS 主机未被写入任何内容。
 - 本切片已提交并推送 `master` 为 `bb098e3`；随后补充本次提交记录（文档三件套的发布状态与台账的提交号）。
+- 台账与契约的补充提交为 `da74997`。前端仓库 `/home/ubuntu/project/HowBlog-2.0-vueblog-vue` 的 `backend-api-sync.json` 仍为 revision `9` / contract `6.0.1`（后端 `8f37bbd`），revision 10 与 11 尚未被前端消费；按此前约定只记录状态，不覆盖前端文件。
 
 后续每次开发完成一个任务后，必须同步更新：
 
