@@ -191,3 +191,15 @@
 - 部署动作：无需迁移或新配置；修改密码限流变量见 [admin-operations.md](admin-operations.md)。
 - 验证：新增 `UserPasswordTest` 4 项（认证、旧密码错误、非法新密码、成功撤销其他会话并保留当前会话）、`UserServiceTest` 3 项、限流参数化覆盖 `PASSWORD_IP`；gated `UserPasswordMySqlTest` 在测试环境真实 MySQL 上通过（双会话、改密后其他会话撤销、当前会话保留、旧密码失效、新密码可登录、临时数据按主键清理）；全量 `mvn test` 192 项、0 失败、0 错误、7 项外部存储测试默认跳过。NAS Docker 端到端验证（2026-10-14）：五容器 healthy、三健康端点 UP；双会话改密后其他会话访问与刷新均 401、当前会话保持 200；旧密码登录 20002、新密码登录 20000；库内会话撤销与 BCrypt 落库确认；`PASSWORD_IP` 限流 12 连发为 9 次 20002、3 次 429（带 Retry-After 与 no-store）、0 次 5xx。验证栈与测试数据已清理。
 - 发布状态：已随后端提交 `4233698` 推送至 `origin/master`；前端可接入修改密码表单。
+
+## Revision 16 - API-20261014-016
+
+- 日期：2026-10-14
+- 类型：能力新增 / 行为调整
+- 破坏性变更：否；contract version `6.6.0`。
+- 影响范围：文章服务新增 `PUT /article/{articleId}/publish` 与 `PUT /article/{articleId}/unpublish`；`POST /article` 改为创建草稿并由服务端维护生命周期字段；`GET /article`、`GET /article/{articleId}`、`POST /article/search` 增加可见性规则。
+- 变更内容：引入文章状态 `state`：`0` 草稿、`1` 已发布。`POST /article` 创建的文章一律为草稿，服务端设置 `state`、`createtime`（草稿为 null）、`updatetime`、`istop`、`visits`、`thumbup`、`comment`，忽略请求体中的同名值。新增 `PUT /article/{articleId}/publish`（仅作者；置为已发布并在首次发布时写入 `createtime`）与 `PUT /article/{articleId}/unpublish`（仅作者；退回草稿并保留 `createtime`），非作者或文章不存在返回 `20003`。可见性：`GET /article` 仅返回已发布文章；`GET /article/{articleId}` 对草稿仅作者可见，其他人按 404 处理；`POST /article/search` 未带 token 时只返回已发布文章，带有效 token 时额外返回当前用户自己的文章。现有 `state` 为 `1` 的数据行为不变。
+- 前端动作：可接入草稿/发布工作流：创建后得到草稿，调用 `publish` 上架、`unpublish` 下架；作者用带 token 的 `GET /article/{articleId}` 或 `POST /article/search`（`userid` 为自己）查看自己的草稿。注意 `GET /article` 与匿名 `POST /article/search` 不再返回草稿。保存 revision `16`。
+- 部署动作：无需迁移；`tb_article.state` 为既有的 `VARCHAR(16)` 列，草稿/已发布复用该列，现有 `state` 为 `1` 的历史文章视为已发布，无需改写数据。
+- 验证：新增 `ArticleServiceTest` 8 项（草稿创建字段、发布/重复发布/下架、非作者与缺失拒绝、草稿可见性、搜索可见性）、`ArticleControllerTest` 新增 8 项（含未认证发布/下架、草稿默认字段、作者发布/下架、非作者拒绝、草稿对匿名 404 对作者 200、列表只返回已发布）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 上通过（草稿落库 `state=0` 且 `createtime` 为空、发布写入 `state=1` 与发布时间、重复发布保留首次时间、下架保留发布时间、非作者拒绝；临时文章按主键删除，DBX 复核运行前后 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0）；全量 `mvn test` 209 项、0 失败、0 错误、8 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
+- 发布状态：已随后端提交推送至 `origin/master`（提交号见台账）；前端可接入草稿/发布工作流。

@@ -4,9 +4,9 @@
 
 本方案用于把项目从“能够编译、可以进行基础接口对接”的开发状态，推进到“身份可信、行为可验证、配置可复现、可以持续迭代”的博客后端。
 
-- 建立日期：2026-09-22；状态更新：2026-10-13
-- 当前接口契约 revision：9（已随 `8f37bbd` 提交；前端已消费）
-- 当前契约版本：6.0.1
+- 建立日期：2026-09-22；状态更新：2026-10-14
+- 当前接口契约 revision：16（contract version `6.6.0`；前端同步指针仍为 revision 9，revision 10 起待前端消费）
+- 当前契约版本：6.6.0
 - 适用范围：`how_common`、`how_user`、`how_base`、`how_article` 及配套文档
 - 配套进度：见 [progress.md](progress.md)
 
@@ -233,3 +233,4 @@ AUTH-01 至 AUTH-10 的核心功能及限流/清理已实现，revision 8 已发
 - AUTH-09 已完成登录与公开刷新/退出路由、JWT 会话 ID、REST/IM 会话校验，并覆盖真实 H2 用户查询、签发失败回滚和跨会话隔离；revision 7 已发布。
 - AUTH-10 已实现 Redis 认证限流与过期会话/摘要有界清理（默认关闭），本地测试及 2026-09-23 隔离 Redis Lua 固定窗口/并发/TTL 验收通过；用户同日确认上线验收通过。revision 8 已随 `79c4c61` 发布至 `origin/master`；前端已消费 revision 8。Phase 1 已收口；Phase 2 已于 2026-10-12 完成（含真实存储集成测试），清理保持默认关闭，启用需另行授权。
 - Phase 3 第一切片（2026-10-13）已完成配置环境化：端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 连接支持环境变量覆盖且默认值不变；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与各服务 `WebMvcConfigurer`；契约发布 revision 10 / `6.1.0`（兼容）。第二切片为 Docker Compose、健康检查、结构化日志与 CI。
+- Phase 4（2026-10-14）已交付注册、资料读取/部分更新、修改密码（撤销其他会话）、手机号唯一约束加固与文章草稿/发布四个切片：`POST /article` 创建草稿并服务端维护生命周期字段，新增 `publish`/`unpublish`（仅作者），公开读取只返回已发布、草稿仅作者可见；契约 revision 16 / `6.6.0`。后续切片为文章审核流程与标签关联。

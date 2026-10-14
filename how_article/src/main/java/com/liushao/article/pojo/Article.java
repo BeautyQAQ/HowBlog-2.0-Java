@@ -21,6 +21,11 @@ import com.liushao.web.ValidationGroups;
 @Table(name = "tb_article")
 public class Article implements Serializable {
 
+    /** 草稿：仅作者可见，不出现在公开文章列表。 */
+    public static final String STATE_DRAFT = "0";
+    /** 已发布：出现在公开文章列表。 */
+    public static final String STATE_PUBLISHED = "1";
+
     @Id
     @Column(name = "id")
     private String id;//ID

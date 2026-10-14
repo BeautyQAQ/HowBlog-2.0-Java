@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.5.0`
-> 当前同步 revision：`15`
+> 当前契约版本：`6.6.0`
+> 当前同步 revision：`16`
 > 最后更新：`2026-10-14`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -173,14 +173,14 @@ REST 接口返回 `Result`：
 | `title` | string | 标题 |
 | `content` | string | 正文 |
 | `image` | string | 封面地址 |
-| `createtime` | datetime/null | 发布时间 |
-| `updatetime` | datetime/null | 更新时间 |
+| `createtime` | datetime/null | 首次发布时间；草稿为 null，首次发布时由服务端写入 |
+| `updatetime` | datetime/null | 更新时间；由服务端维护 |
 | `ispublic` | string | 是否公开 |
-| `istop` | string | 是否置顶 |
-| `visits` | integer/null | 浏览量 |
-| `thumbup` | integer/null | 点赞数 |
-| `comment` | integer/null | 评论数 |
-| `state` | string | 审核状态 |
+| `istop` | string | 是否置顶；新增时服务端置为 `0` |
+| `visits` | integer/null | 浏览量；新增时服务端初始化为 `0` |
+| `thumbup` | integer/null | 点赞数；新增时服务端初始化为 `0` |
+| `comment` | integer/null | 评论数；新增时服务端初始化为 `0` |
+| `state` | string | 文章状态：`0` 草稿、`1` 已发布；由服务端维护 |
 | `channelid` | string | 频道 ID |
 | `url` | string | 文章 URL |
 | `type` | string | 文章类型 |
@@ -460,19 +460,27 @@ REST 接口返回 `Result`：
 
 ### GET `/article`
 
-查询全部文章。成功时 `data` 为 `Article[]`。
+查询公开文章列表。仅返回已发布（`state` 为 `1`）的文章，草稿不出现在该列表中。成功时 `data` 为 `Article[]`。
 
 ### GET `/article/{articleId}`
 
-按 ID 查询文章。不存在时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
+按 ID 查询文章。已发布文章对所有人可见；草稿只有作者本人（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或为草稿而访问者不是作者时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
 
 ### POST `/article`
 
-新增文章。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。
+新增文章，创建为草稿。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。文章以草稿创建：`state` 固定为 `0`、`createtime` 为 `null`、`updatetime` 为服务端当前时间、`istop` 为 `0`、`visits`/`thumbup`/`comment` 均为 `0`，请求体中的这些字段一律被忽略；`columnid`、`image`、`ispublic`、`channelid`、`url`、`type` 由请求体提供。成功返回 `flag: true`、`code: 20000`、`message: "添加成功"`。
 
 ### PUT `/article/{articleId}`
 
-修改文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。路径 ID 会覆盖请求体中的 `id`；作者只能修改内容字段，`userid`、统计字段、审核状态、置顶状态和发布时间由服务端维护。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
+修改文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。路径 ID 会覆盖请求体中的 `id`；作者只能修改内容字段（`columnid`、`title`、`content`、`image`、`ispublic`、`channelid`、`url`、`type`），`userid`、`state`、`createtime`、`updatetime`、统计字段和置顶状态由服务端维护。编辑不会改变文章的草稿/已发布状态。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
+
+### PUT `/article/{articleId}/publish`
+
+发布文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。将文章状态置为已发布（`state` 为 `1`）；若尚未设置过 `createtime`，服务端写入当前时间作为首次发布时间，之后重复发布不会覆盖该时间；`updatetime` 更新为服务端当前时间。无权操作或文章不存在时返回 `flag: false`、`code: 20003`；成功返回 `code: 20000`、`message: "发布成功"`。
+
+### PUT `/article/{articleId}/unpublish`
+
+下架文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。将文章状态退回草稿（`state` 为 `0`），保留 `createtime`，并更新 `updatetime`。无权操作或文章不存在时返回 `flag: false`、`code: 20003`；成功返回 `code: 20000`、`message: "已下架"`。
 
 ### DELETE `/article/{articleId}`
 
@@ -487,6 +495,7 @@ REST 接口返回 `Result`：
 - 请求体是 JSON 对象，后端对字段做精确相等匹配，不是模糊搜索。
 - 当前允许的条件字段为：`id`、`columnid`、`userid`、`title`、`content`、`image`、`createtime`、`updatetime`、`ispublic`、`istop`、`visits`、`thumbup`、`comment`、`state`、`channelid`、`url`、`type`。
 - 未知字段会被忽略；值为 `null` 的字段会被忽略。
+- 可见性：未携带 token 时只返回已发布文章（相当于附加 `state = "1"`）；携带有效 token 时，除已发布文章外还可返回当前用户自己的文章（含草稿）。
 
 请求示例：
 
@@ -698,7 +707,8 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - 文章和评论继续要求作者本人；数据库 `ADMIN` 目前仅用于标签管理，不拥有代改文章或评论的权限。角色管理无公开接口，初始化流程见 [admin-operations.md](admin-operations.md)。
 - 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。已在隔离临时数据上通过真实 MySQL、Redis 和 HTTP 旧键迁移验收；生产部署仍需按目标环境复核连接、密钥和数据备份策略。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
-- 已有基础必填、非空白、非负计数和分页校验；最大文本长度、状态枚举、关联资源存在性仍未全面校验。
+- 已有基础必填、非空白、非负计数和分页校验；最大文本长度、关联资源存在性仍未全面校验。
+- 文章已有草稿/已发布状态与作者权限：新增即为草稿，`publish`/`unpublish` 仅作者可调用，公开列表只返回已发布文章。尚未实现审核流程（提交审核、管理员通过/驳回），数据库 `ADMIN` 角色当前只用于标签管理，不能代改文章。
 - 用户表已有手机号唯一约束（`uk_tb_user_mobile`，迁移见 [mysql-user-mobile-unique.sql](mysql-user-mobile-unique.sql)）：并发注册由数据库约束兜底并返回 `20005`。历史数据中已存在的重复手机号仍会让该手机号注册被拒绝，需要人工处理。后端尚未提供邮箱/短信验证与密码找回。
 - 资料接口只允许修改 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`；`mobile`、密码、计数与统计字段不可通过该接口修改。头像目前只是 URL 字符串，后端不提供文件上传。
 - 修改密码会撤销该用户的其他所有会话（其他设备需要重新登录，IM 连接随后关闭），发起修改的当前会话保持有效；仍没有全设备退出或管理员撤销接口。

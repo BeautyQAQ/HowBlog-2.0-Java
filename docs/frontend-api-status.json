@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.5.0",
-  "revision": 15,
+  "contractVersion": "6.6.0",
+  "revision": 16,
   "updatedAt": "2026-10-14",
-  "latestChangeId": "API-20261014-015",
+  "latestChangeId": "API-20261014-016",
   "latestChangeType": "feature",
   "breaking": false,
-  "requiresFrontendAction": false,
+  "requiresFrontendAction": true,
   "changedAreas": [
-    "user-password-change",
-    "auth-rate-limit-password-ip"
+    "article-draft-publish",
+    "article-visibility"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

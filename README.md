@@ -164,10 +164,12 @@ mvn -pl how_user spring-boot:run
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/article` | 查询全部文章 |
-| `GET` | `/article/{articleId}` | 查询单篇文章 |
-| `POST` | `/article` | 新增文章，需要 Bearer JWT |
+| `GET` | `/article` | 查询已发布文章 |
+| `GET` | `/article/{articleId}` | 查询单篇文章（草稿仅作者可见） |
+| `POST` | `/article` | 新增文章（草稿），需要 Bearer JWT |
 | `PUT` | `/article/{articleId}` | 修改文章，需要作者 Bearer JWT |
+| `PUT` | `/article/{articleId}/publish` | 发布文章，需要作者 Bearer JWT |
+| `PUT` | `/article/{articleId}/unpublish` | 下架文章，需要作者 Bearer JWT |
 | `DELETE` | `/article/{articleId}` | 删除文章，需要作者 Bearer JWT |
 | `POST` | `/article/search/{page}/{size}` | 分页条件查询文章 |
 | `GET` | `/comment` | 查询全部评论 |

@@ -1,5 +1,6 @@
 package com.liushao.article.controller;
 
+import com.liushao.auth.AuthenticatedUser;
 import com.liushao.auth.CurrentUserContext;
 import com.liushao.auth.RequireAuthentication;
 import com.liushao.article.pojo.Article;
@@ -35,7 +36,7 @@ public class ArticleController {
 
     @RequestMapping(value = "{articleId}", method = RequestMethod.GET)
     public Result findById(@PathVariable String articleId) {
-        Article article = articleService.findById(articleId);
+        Article article = articleService.findById(articleId, viewerId());
         return new Result(true, StatusCode.OK, "查询成功", article);
     }
 
@@ -76,11 +77,39 @@ public class ArticleController {
     }
 
     /**
+     * 发布文章数据接口
+     */
+    @RequestMapping(value = "{articleId}/publish", method = RequestMethod.PUT)
+    @RequireAuthentication
+    public Result publish(@PathVariable String articleId) {
+        if (!articleService.publish(articleId, CurrentUserContext.require().getUserId())) {
+            return new Result(false, StatusCode.ACCESSERROR, "无权操作或文章不存在");
+        }
+        return new Result(true, StatusCode.OK, "发布成功");
+    }
+
+    /**
+     * 下架文章数据接口
+     */
+    @RequestMapping(value = "{articleId}/unpublish", method = RequestMethod.PUT)
+    @RequireAuthentication
+    public Result unpublish(@PathVariable String articleId) {
+        if (!articleService.unpublish(articleId, CurrentUserContext.require().getUserId())) {
+            return new Result(false, StatusCode.ACCESSERROR, "无权操作或文章不存在");
+        }
+        return new Result(true, StatusCode.OK, "已下架");
+    }
+
+    /**
      * 条件查询
      */
     @RequestMapping(value="search/{page}/{size}", method = RequestMethod.POST)
     public Result search(@RequestBody Map map, @PathVariable int page, @PathVariable int size) {
-        Page<Article> pageResult = articleService.search(map, page, size);
+        Page<Article> pageResult = articleService.search(map, page, size, viewerId());
         return new Result(true, StatusCode.OK, "查询成功", new PageResult<>(pageResult.getTotalElements(), pageResult.getContent()));
+    }
+
+    private String viewerId() {
+        return CurrentUserContext.get().map(AuthenticatedUser::getUserId).orElse(null);
     }
 }

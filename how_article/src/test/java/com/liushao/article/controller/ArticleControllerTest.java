@@ -31,12 +31,15 @@ import com.liushao.article.service.CommentService;
 import com.liushao.auth.CurrentUserContext;
 import com.liushao.auth.JwtTokenService;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -57,7 +60,8 @@ class ArticleControllerTest {
         @MockBean private com.liushao.auth.SessionVerifier sessions;
 
     @ParameterizedTest
-    @CsvSource({"POST,/article", "PUT,/article/one", "DELETE,/article/one",
+    @CsvSource({"POST,/article", "PUT,/article/one", "DELETE,/article/one", "PUT,/article/one/publish",
+            "PUT,/article/one/unpublish",
             "POST,/comment", "PUT,/comment/one", "DELETE,/comment/one", "PUT,/comment/thumbup/one"})
     void rejectsUnauthenticatedWrites(String method, String path) throws Exception {
         mvc.perform(request(HttpMethod.valueOf(method), path).contentType(MediaType.APPLICATION_JSON).content("{}"))
@@ -191,7 +195,7 @@ class ArticleControllerTest {
 
     @Test
     void hidesUnexpectedFailureDetailsAndClearsIdentity() throws Exception {
-        when(articleDao.findAll()).thenThrow(new IllegalStateException("internal database detail"));
+        when(articleDao.findByState(Article.STATE_PUBLISHED)).thenThrow(new IllegalStateException("internal database detail"));
         mvc.perform(get("/article").header("Authorization", authorization()))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.flag").value(false))
                 .andExpect(jsonPath("$.code").value(20001))
@@ -207,6 +211,72 @@ class ArticleControllerTest {
         mvc.perform(patch("/article")).andExpect(status().isMethodNotAllowed()).andExpect(jsonPath("$.flag").value(false));
         mvc.perform(post("/article").header("Authorization", authorization()).contentType(MediaType.TEXT_PLAIN).content("body"))
                 .andExpect(status().isUnsupportedMediaType()).andExpect(jsonPath("$.flag").value(false));
+    }
+
+    @Test
+    void createsArticlesAsDraftsIgnoringClientLifecycleFields() throws Exception {
+        mvc.perform(post("/article").header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"title\",\"content\":\"body\",\"state\":\"1\",\"visits\":99,"
+                                + "\"thumbup\":99,\"comment\":99,\"istop\":\"1\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
+        verify(articleDao).save(argThat(article -> Article.STATE_DRAFT.equals(article.getState())
+                && article.getCreatetime() == null
+                && Integer.valueOf(0).equals(article.getVisits())
+                && Integer.valueOf(0).equals(article.getThumbup())
+                && Integer.valueOf(0).equals(article.getComment())
+                && "0".equals(article.getIstop())
+                && article.getUpdatetime() != null));
+    }
+
+    @Test
+    void publishesAndUnpublishesOwnArticle() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        mvc.perform(put("/article/one/publish").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+        assertEquals(Article.STATE_PUBLISHED, article.getState());
+        assertNotNull(article.getCreatetime());
+        mvc.perform(put("/article/one/unpublish").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+        assertEquals(Article.STATE_DRAFT, article.getState());
+        assertNotNull(article.getCreatetime());
+        verify(articleDao, times(2)).save(article);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"other", "missing"})
+    void rejectsNonAuthorPublishAndUnpublish(String owner) throws Exception {
+        Article article = new Article();
+        article.setUserid(owner);
+        article.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
+        for (String action : List.of("publish", "unpublish")) {
+            mvc.perform(put("/article/one/" + action).header("Authorization", authorization()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20003));
+        }
+        verify(articleDao, never()).save(any());
+    }
+
+    @Test
+    void hidesDraftFromAnonymousButShowsItToItsAuthor() throws Exception {
+        Article draft = new Article();
+        draft.setUserid("author");
+        draft.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn(Optional.of(draft));
+        mvc.perform(get("/article/one")).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("资源不存在"));
+        mvc.perform(get("/article/one").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.state").value(Article.STATE_DRAFT));
+    }
+
+    @Test
+    void listsOnlyPublishedArticles() throws Exception {
+        when(articleDao.findByState(Article.STATE_PUBLISHED)).thenReturn(List.of());
+        mvc.perform(get("/article")).andExpect(status().isOk()).andExpect(jsonPath("$.data").isArray());
+        verify(articleDao).findByState(Article.STATE_PUBLISHED);
+        verify(articleDao, never()).findAll();
     }
 
     private String authorization() {
