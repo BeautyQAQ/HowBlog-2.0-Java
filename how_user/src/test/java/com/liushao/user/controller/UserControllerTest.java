@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -177,5 +178,27 @@ class UserControllerTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001))
                 .andExpect(jsonPath("$.message").value("请求格式或参数不正确"));
         verifyNoInteractions(userDao);
+    }
+
+    @Test
+    void databaseUniqueConstraintConflictReturnsDuplicateCode() throws Exception {
+        when(userDao.findAllByMobile("13900000000")).thenReturn(List.of());
+        when(userDao.save(any(User.class))).thenThrow(new DataIntegrityViolationException(
+                "Duplicate entry '13900000000' for key 'tb_user.uk_tb_user_mobile'"));
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"13900000000\",\"password\":\"password-123\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(20005)).andExpect(jsonPath("$.message").value("手机号已注册"));
+    }
+
+    @Test
+    void unrelatedIntegrityFailureStaysHidden() throws Exception {
+        when(userDao.findAllByMobile("13900000000")).thenReturn(List.of());
+        when(userDao.save(any(User.class))).thenThrow(new DataIntegrityViolationException(
+                "some other constraint violation"));
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"13900000000\",\"password\":\"password-123\"}"))
+                .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value(20001))
+                .andExpect(jsonPath("$.message").value("服务暂时不可用，请稍后重试"));
     }
 }

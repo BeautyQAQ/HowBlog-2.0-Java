@@ -3,9 +3,9 @@
 ## 1. 当前状态
 
 - 更新时间：2026-10-14
-- 当前阶段：Phase 4 第二切片完成——新增本人资料读取与部分更新接口（`GET/PUT /user/profile`，脱敏视图、部分更新、非法字段忽略），契约 revision `13`，真实 MySQL 验收通过；注册切片已推送（`1c03b70`）；会话清理默认关闭
-- 当前接口契约：revision `13`、contract version `6.4.0`（兼容性新增）；已提交并推送 `master`（`e6a2447`）
-- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册与资料两个切片，均通过全量 `mvn test` 181 项（6 项外部测试跳过）与 gated 真实 MySQL 验收
+- 当前阶段：Phase 4 数据一致性加固——手机号唯一约束 `uk_tb_user_mobile` 已在测试环境库执行，并发注册由约束兜底返回 20005（不再可能重复），契约 revision `14`；NAS Docker 端到端验证（注册/并发/资料/登录）在本提交后进行；会话清理默认关闭
+- 当前接口契约：revision `14`、contract version `6.4.1`（兼容性修复）；本轮改动待提交推送
+- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料两个切片并完成手机号唯一约束加固，本地全量 `mvn test` 183 项（6 项外部测试跳过）通过
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -34,7 +34,7 @@
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
 | Phase 2 测试与数据一致性 | 已完成 | 100% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移、全量 145 项测试及受控本地真实存储集成测试（测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境再评估，真实 Redis/MySQL 宕机演练未执行（预期行为由单元测试与运维说明覆盖） |
 | Phase 3 配置、部署与可观测性 | 已完成 | 100% | 两切片均推送并在 NAS Docker 上验证（`992c05c`、`bb098e3`）：环境变量化、请求关联 ID、`/actuator/health`、容器编排与 CI；结构化日志以 `requestId` 格式落地，JSON 输出与指标导出记为顺延增强项（需可重建容器时验证） |
-| Phase 4 博客核心产品能力 | 进行中 | 25% | 已交付：公开注册接口（BCrypt、查重、注册限流）与本人资料读取/部分更新（脱敏视图、非法字段忽略），契约 revision 13，均通过真实 MySQL 验收；后续：修改密码、文章草稿/发布/审核与作者权限 |
+| Phase 4 博客核心产品能力 | 进行中 | 30% | 已交付：公开注册（BCrypt、查重、注册限流）、本人资料读取/部分更新、手机号唯一约束加固（并发兜底 20005），契约 revision 14；后续：修改密码、文章草稿/发布/审核与作者权限 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
 
 ## 4. 迭代记录：Phase 1 身份认证与安全边界
@@ -80,7 +80,8 @@
 - [!] 本会话对 NAS 的远程写操作（`nohup docker compose up` 重建、`docker exec mysql`、POST 登录探针）被权限分类器拒绝（Remote Shell Writes）；只读检查与简单 GET 通过。后续在 NAS 上重建、重启或写入需用户授权或由用户自行执行。
 - [ ] 结构化日志目前只落地请求关联 ID 与日志格式；JSON 结构化输出、指标导出和链路追踪尚未实现。
 - [x] 注册接口已实现并验收：BCrypt 即时哈希、手机号查重（含历史重复数据拒绝）、注册 IP 限流、契约 revision `12`；gated 真实 MySQL 测试创建临时用户后按主键删除，`nas-mysql` 复核 `register-test` 残留为 0。
-- [ ] 用户表无手机号唯一索引，注册去重为应用层查询，极高并发下可能产生重复记录；数据库级唯一约束需先核对历史重复数据并单独授权 DDL。注册尚无邮箱/短信验证与密码找回。
+- [x] 用户表已加手机号唯一约束（`uk_tb_user_mobile`，取代原非唯一索引）：2026-10-14 经用户授权在测试环境库执行，执行前核对 2 个用户、0 重复、0 空手机号；并发注册由约束兜底返回 20005，不再可能产生重复记录；新库由初始化脚本直接建唯一索引。
+- [ ] 历史数据中若出现重复手机号，该手机号注册会被拒绝，需要人工处理；注册尚无邮箱/短信验证与密码找回。
 - [x] 资料接口已实现并验收：脱敏读取、部分更新（未提供字段保留原值、字符串去空白、邮箱格式校验）、不可修改字段忽略、`updatedate` 服务端维护；gated 真实 MySQL 测试临时用户按主键删除，`profile-test` 残留为 0。
 - [ ] 资料接口不含手机号/密码修改与头像上传；头像仅为 URL 字符串。修改密码尚未实现，需要单独切片设计旧密码校验与会话撤销策略。
 
@@ -118,6 +119,7 @@
 | Phase 3 第二切片（容器化与可观测性） | 2026-10-13 | 2026-10-14 | JDK 21 全量 `mvn test` 159 项、0 失败、0 错误、4 跳过；`bash scripts/check-api-docs.sh` 输出“接口文档一致：revision 11 / API-20261013-011 / contract 6.2.0”；`bash scripts/check-secrets.sh` 通过 | 新增请求关联 ID 过滤器（4 项测试，含伪造换行请求头不回显）、三服务 CORS 暴露 `X-Request-Id`、`/actuator/health`、共用 Dockerfile、`docker-compose.yml`、CI；契约 revision 11 / `6.2.0`。容器镜像构建与真实启动由 NAS 上 `howblog-dev` 栈验证（compose/Dockerfile 与推送提交逐字节一致、五容器 healthy、三健康端点 UP、真实 GET 返回 20000、`X-Request-Id` 生效）；已提交并推送 `bb098e3`。本会话对 NAS 的远程写（重建、`docker exec`）被权限拦截，未执行 |
 | Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL；已提交并推送 `1c03b70` |
 | Phase 4 第二切片（资料读取与更新） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 181 项、0 失败、0 错误、6 跳过；gated `UserProfileMySqlTest` 真实 MySQL 1 项通过（2.5 秒）；DBX 复核 `profile-test` 残留 0 | 新增 `GET/PUT /user/profile`、`ProfileResponse`/`ProfileUpdateRequest`、部分更新与非法字段忽略；契约 revision 13 / `6.4.0`。H2 MVC 认证测试需 `UTC_TIMESTAMP` 别名且目标类必须为 public；未做浏览器/前端联调，未执行 DDL；已提交并推送 `e6a2447` |
+| Phase 4 唯一约束加固（revision 14） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 183 项、0 失败、0 错误、6 跳过（新增 2 项约束冲突测试）；DBX 在 `nas-mysql` 执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0，`SHOW INDEX` 确认唯一索引生效）；NAS 旧 howblog-dev 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷保留 | 新增 `UserIntegrityExceptionHandler`（唯一约束冲突→200/20005，其它完整性异常保持脱敏 500）、可重复执行的 `docs/mysql-user-mobile-unique.sql`、初始化脚本改唯一索引、compose 增加 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；NAS 端到端验证随后进行 |
 
 ## 6. 变更记录
 
@@ -202,6 +204,10 @@
 - 调试记录：H2 MVC 认证测试必须在 fixture 中创建 `UTC_TIMESTAMP` 别名（SessionVerifier 使用 `UTC_TIMESTAMP(6)`），且别名目标方法所在测试类必须是 public——包级私有类会让 H2 反射调用失败，表现为所有认证请求 500（`UncategorizedSQLException`）；缺少别名则表现为 `BadSqlGrammarException`。两次失败后定位并修复，未改生产代码。
 - 契约同步 revision `13` / `6.4.0`（兼容性新增）：三件套与 README 接口表已更新。
 - 资料切片已提交并推送 `master` 为 `e6a2447`；revision 10–13 均待前端消费（前端指针仍为 revision `9`）。
+- 用户授权两项操作：对测试环境库执行手机号唯一约束 DDL；清理 NAS 上旧的 howblog 容器并重跑此前被权限拦截的验证。
+- 执行 DDL：`nas-mysql` 核对 2 个用户、0 重复、0 空手机号后，执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0），`SHOW INDEX` 确认唯一索引生效；新增可重复执行的 `docs/mysql-user-mobile-unique.sql`，`mysql-init.sql` 改为直接建唯一索引，`admin-operations.md` 更新部署说明。
+- 代码加固：新增 `UserIntegrityExceptionHandler`，唯一约束冲突（并发注册同一手机号）返回 200/20005「手机号已注册」而不是 500，其它数据完整性异常保持脱敏 500；新增 `UserControllerTest` 2 项。全量 `mvn test` 183 项、0 失败、0 错误、6 跳过。
+- NAS 清理：`howblog-dev` 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷 `howblog-dev_mysql-data` 保留；内存可用由约 1.8G 升至约 2.2G。随后用当前代码重建验证栈做端到端验证。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -214,7 +220,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. Phase 4 已交付注册与资料两个切片；下一片建议：修改密码（旧密码校验、成功后撤销其他会话的策略）或进入文章能力（草稿/发布/审核状态与作者权限），先定义数据模型、权限规则、接口契约与验收测试，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项，需在可重建容器的前提下验证。NAS 上的 `/tmp/howblog-dev` 栈（占用 9001/9004/9008）正在运行，不要停止或覆盖；对 NAS 的远程写操作需先获得用户授权。
+1. 用当前代码在 NAS 上重建验证栈，完成注册/并发/登录/资料的端到端验证（含 20 路并发注册恰好 1 成功），验证后清理容器与卷。之后下一片建议：修改密码（旧密码校验、成功后撤销其他会话的策略）或进入文章能力（草稿/发布/审核状态与作者权限）。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。NAS 上旧 howblog-dev 栈已按用户指示删除；对 NAS 的写操作已获用户授权。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。

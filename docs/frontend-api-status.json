@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.4.0",
-  "revision": 13,
+  "contractVersion": "6.4.1",
+  "revision": 14,
   "updatedAt": "2026-10-14",
-  "latestChangeId": "API-20261014-013",
-  "latestChangeType": "feature",
+  "latestChangeId": "API-20261014-014",
+  "latestChangeType": "fix",
   "breaking": false,
   "requiresFrontendAction": false,
   "changedAreas": [
-    "user-profile-read",
-    "user-profile-update"
+    "user-mobile-unique-constraint",
+    "user-registration-concurrency"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

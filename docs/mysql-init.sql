@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `tb_user` (
   `fanscount` INT DEFAULT 0 COMMENT '粉丝数',
   `followcount` INT DEFAULT 0 COMMENT '关注数',
   PRIMARY KEY (`id`),
-  KEY `idx_tb_user_mobile` (`mobile`)
+  UNIQUE KEY `uk_tb_user_mobile` (`mobile`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 CREATE TABLE IF NOT EXISTS `tb_label` (
