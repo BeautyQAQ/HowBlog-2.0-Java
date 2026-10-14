@@ -25,7 +25,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "how.auth.jwt.secret=test-only-signing-key-not-for-production", "logging.level.root=WARN",
         "how.cors.allowed-origins=https://allowed.test, https://second.test"
 })
-@Import({UserService.class, PasswordConfig.class, com.liushao.user.service.AuthSessionService.class})
+@Import({UserService.class, com.liushao.user.service.UserFollowService.class, PasswordConfig.class,
+        com.liushao.user.service.AuthSessionService.class})
 class CorsConfigurationTest {
     @Autowired private MockMvc mvc;
     @MockBean private UserDao userDao;
@@ -33,6 +34,7 @@ class CorsConfigurationTest {
     @MockBean private com.liushao.user.dao.AuthRefreshTokenDao refreshTokens;
     @MockBean private com.liushao.auth.SessionVerifier verifier;
     @MockBean private AuthRateLimiter rateLimiter;
+    @MockBean private com.liushao.user.dao.UserFollowDao userFollowDao;
 
     @Test
     void allowsPreflightOnlyFromConfiguredOrigins() throws Exception {

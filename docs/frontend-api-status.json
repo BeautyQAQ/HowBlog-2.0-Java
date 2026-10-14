@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.9.0",
-  "revision": 19,
+  "contractVersion": "6.10.0",
+  "revision": 20,
   "updatedAt": "2026-10-14",
-  "latestChangeId": "API-20261014-019",
+  "latestChangeId": "API-20261014-020",
   "latestChangeType": "feature",
   "breaking": false,
   "requiresFrontendAction": true,
   "changedAreas": [
-    "article-thumbup"
+    "user-follow"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

@@ -1,6 +1,7 @@
 package com.liushao.user.controller;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -12,6 +13,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,13 +38,17 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers = UserController.class, properties = {
         "how.auth.jwt.secret=test-only-signing-key-not-for-production", "logging.level.root=WARN"
 })
-@Import({UserService.class, PasswordConfig.class, com.liushao.user.service.AuthSessionService.class})
+@Import({UserService.class, com.liushao.user.service.UserFollowService.class, PasswordConfig.class,
+        com.liushao.user.service.AuthSessionService.class})
 class UserControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private PasswordEncoder passwordEncoder;
@@ -51,6 +58,8 @@ class UserControllerTest {
     @MockBean private com.liushao.user.dao.AuthRefreshTokenDao refreshTokens;
     @MockBean private com.liushao.auth.SessionVerifier verifier;
     @MockBean private AuthRateLimiter rateLimiter;
+    @MockBean private com.liushao.user.dao.UserFollowDao userFollowDao;
+    @Autowired private com.liushao.auth.JwtTokenService tokens;
 
     @ParameterizedTest
     @CsvSource({"/user/login, LOGIN_IP", "/user/register, REGISTER_IP", "/user/password, PASSWORD_IP",
@@ -201,5 +210,89 @@ class UserControllerTest {
                         .content("{\"mobile\":\"13900000000\",\"password\":\"password-123\"}"))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value(20001))
                 .andExpect(jsonPath("$.message").value("服务暂时不可用，请稍后重试"));
+    }
+
+    @Test
+    void followEndpointsRequireAuthentication() throws Exception {
+        mvc.perform(put("/user/follow/bob")).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(20003));
+        mvc.perform(delete("/user/follow/bob")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(userFollowDao);
+    }
+
+    @Test
+    void followMapsSuccessSelfDuplicateAndMissing() throws Exception {
+        when(userDao.findByIdForUpdate("bob")).thenReturn(Optional.of(new User()));
+        when(userFollowDao.insertIfAbsent("alice", "bob")).thenReturn(1);
+        mvc.perform(put("/user/follow/bob").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000))
+                .andExpect(jsonPath("$.message").value("关注成功"));
+        verify(userDao).incrementFans("bob");
+        verify(userDao).incrementFollow("alice");
+
+        mvc.perform(put("/user/follow/alice").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20001))
+                .andExpect(jsonPath("$.message").value("不能关注自己"));
+
+        when(userFollowDao.insertIfAbsent("alice", "bob")).thenReturn(0);
+        mvc.perform(put("/user/follow/bob").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20005))
+                .andExpect(jsonPath("$.message").value("已关注"));
+
+        when(userDao.findByIdForUpdate("ghost")).thenReturn(Optional.empty());
+        mvc.perform(put("/user/follow/ghost").header("Authorization", authorization()))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001));
+    }
+
+    @Test
+    void unfollowMapsSuccessNotFollowingAndMissing() throws Exception {
+        when(userDao.findByIdForUpdate("bob")).thenReturn(Optional.of(new User()));
+        when(userFollowDao.deleteRelation("alice", "bob")).thenReturn(1);
+        mvc.perform(delete("/user/follow/bob").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000))
+                .andExpect(jsonPath("$.message").value("已取消关注"));
+        verify(userDao).decrementFans("bob");
+        verify(userDao).decrementFollow("alice");
+
+        when(userFollowDao.deleteRelation("alice", "bob")).thenReturn(0);
+        mvc.perform(delete("/user/follow/bob").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20005))
+                .andExpect(jsonPath("$.message").value("未关注"));
+
+        when(userDao.findByIdForUpdate("ghost")).thenReturn(Optional.empty());
+        mvc.perform(delete("/user/follow/ghost").header("Authorization", authorization()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listsFansAndFollowsAndRejectsBadPaging() throws Exception {
+        when(userDao.existsById("bob")).thenReturn(true);
+        when(userDao.findFollowers("bob", PageRequest.of(0, 10))).thenReturn(new PageImpl<>(List.of(follower())));
+        mvc.perform(get("/user/bob/fans/1/10"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.rows[0].id").value("alice"))
+                .andExpect(jsonPath("$.data.rows[0].mobile").doesNotExist())
+                .andExpect(jsonPath("$.data.rows[0].password").doesNotExist());
+
+        mvc.perform(get("/user/bob/fans/0/10")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(20001));
+
+        when(userDao.existsById("ghost")).thenReturn(false);
+        mvc.perform(get("/user/ghost/follows/1/10")).andExpect(status().isNotFound());
+    }
+
+    private User follower() {
+        User user = new User();
+        user.setId("alice");
+        user.setNickname("Alice");
+        user.setMobile("13800000000");
+        user.setPassword("$2a$10$secret");
+        return user;
+    }
+
+    private String authorization() {
+        when(verifier.isActive("a".repeat(64), "alice")).thenReturn(true);
+        return "Bearer " + tokens.issueToken("alice", "test-user", "a".repeat(64),
+                java.time.Instant.now().plusSeconds(3600));
     }
 }

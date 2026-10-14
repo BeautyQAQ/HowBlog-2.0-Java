@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.9.0`
-> 当前同步 revision：`19`
+> 当前契约版本：`6.10.0`
+> 当前同步 revision：`20`
 > 最后更新：`2026-10-14`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -147,6 +147,21 @@ REST 接口返回 `Result`：
 | `updatedate` | datetime/null | 更新时间 |
 | `lastdate` | datetime/null | 最后登录时间 |
 | `online` | integer/null | 在线时长，单位为分钟 |
+| `interest` | string | 兴趣 |
+| `personality` | string | 个性签名 |
+| `fanscount` | integer/null | 粉丝数 |
+| `followcount` | integer/null | 关注数 |
+
+### UserSummary
+
+粉丝/关注列表返回的公开摘要，不含手机号、邮箱、生日与密码。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 用户 ID |
+| `nickname` | string | 昵称 |
+| `avatar` | string | 头像地址 |
+| `sex` | string | 性别 |
 | `interest` | string | 兴趣 |
 | `personality` | string | 个性签名 |
 | `fanscount` | integer/null | 粉丝数 |
@@ -404,6 +419,26 @@ REST 接口返回 `Result`：
 - 成功返回 HTTP 200、`code: 20000`、`message: "修改成功"`、`data: null`。
 
 成功修改后，该用户在其他设备上的所有会话立即被撤销：这些设备的访问 token 再使用时返回 401、刷新凭据也失效（IM 连接在下一次消息或空闲检查时以 `1008` 关闭），需要重新登录。发起修改的当前会话保持有效，其访问 token 和刷新凭据继续可用。修改密码受来源 IP 限流（默认每 60 秒 10 次），429/503 行为与登录一致。
+
+### PUT `/user/follow/{userId}`
+
+关注指定用户。需要 `Authorization: Bearer <token>`。不能关注自己：返回 HTTP 200、`flag: false`、`code: 20001`、`message: "不能关注自己"`。目标用户不存在返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。重复关注返回 HTTP 200、`flag: false`、`code: 20005`、`message: "已关注"`（计数不变）。成功后服务端在 `tb_user_follow` 登记唯一关系，并对被关注者 `fanscount`、关注者 `followcount` 原子加 1，返回 `code: 20000`、`message: "关注成功"`。
+
+### DELETE `/user/follow/{userId}`
+
+取消关注。需要 `Authorization: Bearer <token>`。目标用户不存在返回 HTTP 404、`code: 20001`。未关注时返回 HTTP 200、`flag: false`、`code: 20005`、`message: "未关注"`（计数不变）。成功后删除关系并对被关注者 `fanscount`、关注者 `followcount` 原子减 1（不小于 0），返回 `code: 20000`、`message: "已取消关注"`。
+
+### GET `/user/{userId}/fans/{page}/{size}`
+
+查询指定用户的粉丝列表（关注该用户的人）。公开接口，无需 token。
+
+### GET `/user/{userId}/follows/{page}/{size}`
+
+查询指定用户关注的用户列表。公开接口，无需 token。
+
+- 两个列表接口的 `page` 从 `1` 开始、`size` 在 `1` 到 `100` 之间（含边界）；越界或无法解析返回 HTTP 400、`code: 20001`。
+- 目标用户不存在返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
+- 成功返回 `data` 为 `PageResult<UserSummary>`（`total` 与 `rows`），每项为公开摘要，不含手机号、邮箱、生日与密码。
 
 ## 基础服务（9001）
 
@@ -727,6 +762,7 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - 文章已有草稿/已发布/待审核状态与作者权限：新增即为草稿，`publish`/`unpublish`/`submit` 仅作者可调用，`approve`/`reject` 仅数据库 `ADMIN` 可调用，公开列表只返回已发布文章，草稿与待审核仅作者或管理员可见。作者仍可自行 `publish`，审核（`submit` → `approve`/`reject`）为可选路径；未授予任何真实账号管理员权限，未授权时审核接口对所有用户返回 403。
 - 文章浏览量在 `GET /article/{articleId}` 读取已发布文章时累加（排除作者本人），没有按用户或 IP 去重，重复刷新、预取或爬虫会重复计数；草稿与待审核文章不计入。
 - 文章点赞使用唯一关系表 `tb_article_thumbup`（部署前执行 [mysql-article-thumbup-migration.sql](mysql-article-thumbup-migration.sql)，可重复执行）；历史 `tb_article.thumbup` 计数保留、不重算、不补关系，历史点赞用户仍可再次点赞。暂不支持取消点赞或点赞用户列表。
+- 关注使用唯一关系表 `tb_user_follow`（部署前执行 [mysql-user-follow-migration.sql](mysql-user-follow-migration.sql)，可重复执行）；`fanscount`/`followcount` 历史计数保留、不重算、不补关系。粉丝/关注列表只返回公开摘要（`id`、`nickname`、`avatar`、`sex`、`interest`、`personality`、`fanscount`、`followcount`），不含手机号、邮箱与生日。
 - 用户表已有手机号唯一约束（`uk_tb_user_mobile`，迁移见 [mysql-user-mobile-unique.sql](mysql-user-mobile-unique.sql)）：并发注册由数据库约束兜底并返回 `20005`。历史数据中已存在的重复手机号仍会让该手机号注册被拒绝，需要人工处理。后端尚未提供邮箱/短信验证与密码找回。
 - 资料接口只允许修改 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`；`mobile`、密码、计数与统计字段不可通过该接口修改。头像目前只是 URL 字符串，后端不提供文件上传。
 - 修改密码会撤销该用户的其他所有会话（其他设备需要重新登录，IM 连接随后关闭），发起修改的当前会话保持有效；仍没有全设备退出或管理员撤销接口。

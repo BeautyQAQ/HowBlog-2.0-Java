@@ -108,6 +108,18 @@ HOW_ARTICLE_TEST_CONFIG=/absolute/path/to/how_article/src/main/resources/applica
   mvn -pl how_article -am test -Dtest=ArticleThumbupMySqlTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
+## 用户关注迁移与真实存储集成测试
+
+- 关注使用唯一关系表 `tb_user_follow`；部署前对目标库执行 [mysql-user-follow-migration.sql](mysql-user-follow-migration.sql)（可重复执行），新库由 [mysql-init.sql](mysql-init.sql) 直接建表。2026-10-14 经用户授权在测试环境库执行。
+- `tb_user.fanscount`（被关注者粉丝数）与 `followcount`（关注者关注数）由应用端原子增减，减操作不小于 0；历史计数保留、不重算、不补关系。
+- 关注/取关在写入前对目标用户行执行 `SELECT ... FOR UPDATE`，避免并发同一关系时的锁竞争（首次 20 路并发复现失败，加锁后通过）。
+- gated `UserFollowMySqlTest` 在真实 MySQL 上覆盖首次/重复/自己/缺失/取关、粉丝与关注列表、同一关系 20 路并发恰好一次成功；临时用户与关系按主键精确清理，不执行 DDL、不清库。
+
+```bash
+HOW_AUTH_SERVICE_TEST_CONFIG=/absolute/path/to/how_user/src/main/resources/application.yml \
+  mvn -pl how_user -am test -Dtest=UserFollowMySqlTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
 ## 服务配置环境变量（Phase 3）
 
 三个服务的端口、MySQL 与跨域来源支持环境变量覆盖；未设置时使用 `application.yml` 中的默认值，默认值保持不变。

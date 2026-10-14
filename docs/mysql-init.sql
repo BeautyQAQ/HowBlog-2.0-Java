@@ -95,3 +95,14 @@ CREATE TABLE IF NOT EXISTS `tb_article_thumbup` (
   CONSTRAINT `fk_article_thumbup_article` FOREIGN KEY (`articleid`)
     REFERENCES `tb_article` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章点赞唯一关系';
+
+CREATE TABLE IF NOT EXISTS `tb_user_follow` (
+  `follower_id` VARCHAR(64) NOT NULL COMMENT '关注者用户 ID',
+  `followee_id` VARCHAR(64) NOT NULL COMMENT '被关注用户 ID',
+  `created_at` DATETIME(6) NOT NULL COMMENT '关注时间',
+  PRIMARY KEY (`follower_id`, `followee_id`),
+  KEY `idx_tb_user_follow_followee` (`followee_id`),
+  KEY `idx_tb_user_follow_created` (`created_at`),
+  CONSTRAINT `fk_user_follow_follower` FOREIGN KEY (`follower_id`) REFERENCES `tb_user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_user_follow_followee` FOREIGN KEY (`followee_id`) REFERENCES `tb_user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户关注唯一关系';

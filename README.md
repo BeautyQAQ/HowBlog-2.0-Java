@@ -149,6 +149,10 @@ mvn -pl how_user spring-boot:run
 | `POST` | `/user/password` | 修改密码，需要 Bearer JWT，成功撤销其他会话 |
 | `POST` | `/user/refresh` | 刷新访问与刷新凭据 |
 | `POST` | `/user/logout` | 退出当前会话 |
+| `PUT` | `/user/follow/{userId}` | 关注用户，需要 Bearer JWT |
+| `DELETE` | `/user/follow/{userId}` | 取消关注，需要 Bearer JWT |
+| `GET` | `/user/{userId}/fans/{page}/{size}` | 粉丝列表（公开） |
+| `GET` | `/user/{userId}/follows/{page}/{size}` | 关注列表（公开） |
 
 ### 基础服务 `http://localhost:9001`
 

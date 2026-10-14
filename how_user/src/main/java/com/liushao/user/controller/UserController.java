@@ -3,6 +3,7 @@ package com.liushao.user.controller;
 import com.liushao.auth.AuthenticatedUser;
 import com.liushao.auth.CurrentUserContext;
 import com.liushao.auth.RequireAuthentication;
+import com.liushao.entity.PageResult;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import com.liushao.user.pojo.ChangePasswordRequest;
@@ -11,7 +12,9 @@ import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.pojo.ProfileResponse;
 import com.liushao.user.pojo.ProfileUpdateRequest;
 import com.liushao.user.pojo.RegisterRequest;
+import com.liushao.user.pojo.UserSummaryResponse;
 import com.liushao.user.service.UserService;
+import com.liushao.user.service.UserFollowService;
 import com.liushao.user.service.AuthRateLimiter;
 import com.liushao.user.pojo.RefreshRequest;
 import com.liushao.auth.RefreshCredentialEndpoint;
@@ -25,10 +28,12 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final UserService userService;
+    private final UserFollowService userFollowService;
     private final AuthRateLimiter rateLimiter;
 
-    public UserController(UserService userService, AuthRateLimiter rateLimiter) {
+    public UserController(UserService userService, UserFollowService userFollowService, AuthRateLimiter rateLimiter) {
         this.userService = userService;
+        this.userFollowService = userFollowService;
         this.rateLimiter = rateLimiter;
     }
 
@@ -93,6 +98,32 @@ public class UserController {
         };
     }
 
+    @PutMapping("follow/{userId}")
+    @RequireAuthentication
+    public ResponseEntity<Result> follow(@PathVariable String userId) {
+        UserFollowService.FollowResult result =
+                userFollowService.follow(CurrentUserContext.require().getUserId(), userId);
+        return followResponse(result, "关注成功");
+    }
+
+    @DeleteMapping("follow/{userId}")
+    @RequireAuthentication
+    public ResponseEntity<Result> unfollow(@PathVariable String userId) {
+        UserFollowService.FollowResult result =
+                userFollowService.unfollow(CurrentUserContext.require().getUserId(), userId);
+        return followResponse(result, "已取消关注");
+    }
+
+    @GetMapping("{userId}/fans/{page}/{size}")
+    public ResponseEntity<Result> fans(@PathVariable String userId, @PathVariable int page, @PathVariable int size) {
+        return listResponse(userFollowService.fans(userId, page, size));
+    }
+
+    @GetMapping("{userId}/follows/{page}/{size}")
+    public ResponseEntity<Result> follows(@PathVariable String userId, @PathVariable int page, @PathVariable int size) {
+        return listResponse(userFollowService.follows(userId, page, size));
+    }
+
     @PostMapping("refresh")
     @RefreshCredentialEndpoint
     public ResponseEntity<Result> refresh(@Valid @RequestBody RefreshRequest request) {
@@ -109,5 +140,21 @@ public class UserController {
         return ResponseEntity.status(revoked ? 200 : 401).header("Cache-Control", "no-store")
                 .body(revoked ? new Result(true, StatusCode.OK, "退出成功")
                         : new Result(false, StatusCode.ACCESSERROR, "请重新登录"));
+    }
+
+    private ResponseEntity<Result> followResponse(UserFollowService.FollowResult result, String successMessage) {
+        return switch (result) {
+            case SUCCESS -> ResponseEntity.ok(new Result(true, StatusCode.OK, successMessage));
+            case SELF -> ResponseEntity.ok(new Result(false, StatusCode.ERROR, "不能关注自己"));
+            case DUPLICATE -> ResponseEntity.ok(new Result(false, StatusCode.REPERROR, "已关注"));
+            case NOT_FOLLOWING -> ResponseEntity.ok(new Result(false, StatusCode.REPERROR, "未关注"));
+            case NOT_FOUND -> ResponseEntity.status(404).body(new Result(false, StatusCode.ERROR, "资源不存在"));
+        };
+    }
+
+    private ResponseEntity<Result> listResponse(PageResult<UserSummaryResponse> page) {
+        return page == null
+                ? ResponseEntity.status(404).body(new Result(false, StatusCode.ERROR, "资源不存在"))
+                : ResponseEntity.ok(new Result(true, StatusCode.OK, "查询成功", page));
     }
 }
