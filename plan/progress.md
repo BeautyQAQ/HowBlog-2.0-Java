@@ -3,9 +3,9 @@
 ## 1. 当前状态
 
 - 更新时间：2026-10-14
-- 当前阶段：Phase 4 数据一致性加固——手机号唯一约束 `uk_tb_user_mobile` 已在测试环境库执行，并发注册由约束兜底返回 20005（不再可能重复），契约 revision `14`；NAS Docker 端到端验证（注册/并发/资料/登录）在本提交后进行；会话清理默认关闭
-- 当前接口契约：revision `14`、contract version `6.4.1`（兼容性修复）；本轮改动待提交推送
-- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料两个切片并完成手机号唯一约束加固，本地全量 `mvn test` 183 项（6 项外部测试跳过）通过
+- 当前阶段：Phase 4 数据一致性加固完成——手机号唯一约束 `uk_tb_user_mobile` 已在测试环境库执行，NAS Docker 端到端验证通过（含 20 路并发注册恰好 1 成功、19 重复、0 异常），契约 revision `14` 已推送（`86f887a`）；会话清理默认关闭
+- 当前接口契约：revision `14`、contract version `6.4.1`（兼容性修复）；已提交并推送 `master`（`86f887a`）
+- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料两个切片并完成唯一约束加固，全量 `mvn test` 183 项（6 项跳过）与 NAS 端到端验证均通过
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -119,7 +119,7 @@
 | Phase 3 第二切片（容器化与可观测性） | 2026-10-13 | 2026-10-14 | JDK 21 全量 `mvn test` 159 项、0 失败、0 错误、4 跳过；`bash scripts/check-api-docs.sh` 输出“接口文档一致：revision 11 / API-20261013-011 / contract 6.2.0”；`bash scripts/check-secrets.sh` 通过 | 新增请求关联 ID 过滤器（4 项测试，含伪造换行请求头不回显）、三服务 CORS 暴露 `X-Request-Id`、`/actuator/health`、共用 Dockerfile、`docker-compose.yml`、CI；契约 revision 11 / `6.2.0`。容器镜像构建与真实启动由 NAS 上 `howblog-dev` 栈验证（compose/Dockerfile 与推送提交逐字节一致、五容器 healthy、三健康端点 UP、真实 GET 返回 20000、`X-Request-Id` 生效）；已提交并推送 `bb098e3`。本会话对 NAS 的远程写（重建、`docker exec`）被权限拦截，未执行 |
 | Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL；已提交并推送 `1c03b70` |
 | Phase 4 第二切片（资料读取与更新） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 181 项、0 失败、0 错误、6 跳过；gated `UserProfileMySqlTest` 真实 MySQL 1 项通过（2.5 秒）；DBX 复核 `profile-test` 残留 0 | 新增 `GET/PUT /user/profile`、`ProfileResponse`/`ProfileUpdateRequest`、部分更新与非法字段忽略；契约 revision 13 / `6.4.0`。H2 MVC 认证测试需 `UTC_TIMESTAMP` 别名且目标类必须为 public；未做浏览器/前端联调，未执行 DDL；已提交并推送 `e6a2447` |
-| Phase 4 唯一约束加固（revision 14） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 183 项、0 失败、0 错误、6 跳过（新增 2 项约束冲突测试）；DBX 在 `nas-mysql` 执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0，`SHOW INDEX` 确认唯一索引生效）；NAS 旧 howblog-dev 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷保留 | 新增 `UserIntegrityExceptionHandler`（唯一约束冲突→200/20005，其它完整性异常保持脱敏 500）、可重复执行的 `docs/mysql-user-mobile-unique.sql`、初始化脚本改唯一索引、compose 增加 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；NAS 端到端验证随后进行 |
+| Phase 4 唯一约束加固（revision 14） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 183 项、0 失败、0 错误、6 跳过（新增 2 项约束冲突测试）；DBX 在 `nas-mysql` 执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0，`SHOW INDEX` 确认唯一索引生效）；NAS 旧 howblog-dev 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷保留 | 新增 `UserIntegrityExceptionHandler`（唯一约束冲突→200/20005，其它完整性异常保持脱敏 500）、可重复执行的 `docs/mysql-user-mobile-unique.sql`、初始化脚本改唯一索引、compose 增加 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；NAS 端到端验证：五容器 healthy、注册/重复/非法/登录/资料读写/退出全通过，20 路并发注册 1 成功 19 重复 0 异常，库内唯一索引与 BCrypt 确认；已提交并推送 `86f887a`，验证栈已清理 |
 
 ## 6. 变更记录
 
@@ -208,6 +208,8 @@
 - 执行 DDL：`nas-mysql` 核对 2 个用户、0 重复、0 空手机号后，执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0），`SHOW INDEX` 确认唯一索引生效；新增可重复执行的 `docs/mysql-user-mobile-unique.sql`，`mysql-init.sql` 改为直接建唯一索引，`admin-operations.md` 更新部署说明。
 - 代码加固：新增 `UserIntegrityExceptionHandler`，唯一约束冲突（并发注册同一手机号）返回 200/20005「手机号已注册」而不是 500，其它数据完整性异常保持脱敏 500；新增 `UserControllerTest` 2 项。全量 `mvn test` 183 项、0 失败、0 错误、6 跳过。
 - NAS 清理：`howblog-dev` 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷 `howblog-dev_mysql-data` 保留；内存可用由约 1.8G 升至约 2.2G。随后用当前代码重建验证栈做端到端验证。
+- NAS 端到端验证（用提交 `86f887a` 重建 `howblog-verify` 栈）：五容器全部 healthy，9001/9004/9008 健康端点 UP；注册 20000、重复 20005、非法 400；20 路并发注册同一手机号恰好 1 成功、19 重复、0 异常（首轮按行统计误报 3 个异常，实为并发写同一输出文件造成的两行合并，按出现次数复核为 19 个 20005），库内该手机号仅 1 条；登录→资料读取（脱敏，无密码字段）→资料修改（昵称/兴趣更新，updatedate 刷新）→退出全部通过；`X-Request-Id: e2e-check-1` 原样回显；CORS 预检暴露 `Retry-After` 与 `X-Request-Id`；库内确认 `uk_tb_user_mobile` 唯一索引与 `$2a$` BCrypt 密码。
+- 验证栈已清理（`docker compose down -v` 删除容器与隔离数据卷，镜像删除，`~/howblog-verify` 与 `/tmp/howblog-src.tar.gz` 删除）；NAS 上无 howblog 容器、镜像或验证卷残留（旧 `howblog-dev_mysql-data` 卷按约定保留）。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -220,7 +222,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 用当前代码在 NAS 上重建验证栈，完成注册/并发/登录/资料的端到端验证（含 20 路并发注册恰好 1 成功），验证后清理容器与卷。之后下一片建议：修改密码（旧密码校验、成功后撤销其他会话的策略）或进入文章能力（草稿/发布/审核状态与作者权限）。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。NAS 上旧 howblog-dev 栈已按用户指示删除；对 NAS 的写操作已获用户授权。
+1. 下一片建议：修改密码（旧密码校验、成功后撤销其他会话的策略）或进入文章能力（草稿/发布/审核状态与作者权限），先定义数据模型、权限规则、接口契约与验收测试，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项，可用同一套 NAS 验证流程补验。对 NAS 的写操作已获用户授权，验证与清理方式见 2026-10-14 记录。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。
