@@ -3,9 +3,9 @@
 ## 1. 当前状态
 
 - 更新时间：2026-10-14
-- 当前阶段：Phase 4 第五切片完成——文章审核与管理员权限（作者 `submit` 提交草稿、管理员 `approve`/`reject`、待审核状态、管理员在读取与搜索中不受可见性限制）已通过本地测试与 gated 真实 MySQL 验收，契约 revision `17`；会话清理默认关闭
-- 当前接口契约：revision `17`、contract version `6.7.0`（兼容性新增）；已提交并推送 `master`（`f35d3cb`）
-- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码、文章草稿/发布、文章审核五个切片并完成唯一约束加固，全量 `mvn test` 227 项（8 项跳过）通过
+- 当前阶段：Phase 4 第六切片完成——文章浏览量（`GET /article/{articleId}` 读取已发布文章时服务端原子累加，排除作者本人；草稿/待审核不计入）已通过本地测试与 gated 真实 MySQL 验收，契约 revision `18`；会话清理默认关闭
+- 当前接口契约：revision `18`、contract version `6.8.0`（兼容性新增）；已提交并推送 `master`
+- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码、文章草稿/发布、文章审核、文章浏览量六个切片并完成唯一约束加固，全量 `mvn test` 232 项（8 项跳过）通过
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -34,7 +34,7 @@
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
 | Phase 2 测试与数据一致性 | 已完成 | 100% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移、全量 145 项测试及受控本地真实存储集成测试（测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境再评估，真实 Redis/MySQL 宕机演练未执行（预期行为由单元测试与运维说明覆盖） |
 | Phase 3 配置、部署与可观测性 | 已完成 | 100% | 两切片均推送并在 NAS Docker 上验证（`992c05c`、`bb098e3`）：环境变量化、请求关联 ID、`/actuator/health`、容器编排与 CI；结构化日志以 `requestId` 格式落地，JSON 输出与指标导出记为顺延增强项（需可重建容器时验证） |
-| Phase 4 博客核心产品能力 | 进行中 | 70% | 已交付：公开注册、资料读取/部分更新、修改密码（撤销其他会话）、手机号唯一约束加固、文章草稿/发布、文章审核与管理员权限，契约 revision 17；后续：标签关联、浏览量/收藏/关注 |
+| Phase 4 博客核心产品能力 | 进行中 | 75% | 已交付：公开注册、资料读取/部分更新、修改密码（撤销其他会话）、手机号唯一约束加固、文章草稿/发布、文章审核与管理员权限、文章浏览量，契约 revision 18；后续：文章点赞/收藏/关注、标签关联 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
 
 ## 4. 迭代记录：Phase 1 身份认证与安全边界
@@ -89,6 +89,8 @@
 - [ ] 尚未实现文章审核流程（提交审核、管理员通过/驳回）；`ADMIN` 角色当前只用于标签管理，不能代改文章。文章删除仍为物理删除，无回收站/软删除。
 - [x] 文章审核与管理员权限已实现并验收：作者 `submit` 将草稿置为待审核（仅草稿可提交），管理员 `approve`（待审核→已发布，首次写入 `createtime`）/`reject`（待审核→草稿）；非管理员返回 403，文章不存在返回 404，状态不符返回 200/20001。`ADMIN` 经 `tb_user_role` 读取（与标签管理同表，文章模块新增只读 `UserRoleDao`）。待审核对公开列表与匿名搜索不可见；管理员在 `GET /article/{articleId}` 与 `POST /article/search` 中不受可见性限制。gated 真实 MySQL 通过（含临时管理员与文章精确清理），DBX 复核 `tb_article` 3 → 3、`tb_user` 2 → 2、`tb_user_role` 0 → 0、临时数据残留 0。
 - [ ] 未授予任何真实账号管理员权限，未授权前审核接口对所有用户返回 403；文章删除仍为物理删除，无回收站/软删除。
+- [x] 文章浏览量已实现并验收：`GET /article/{articleId}` 读取已发布文章时对 `visits` 执行数据库端原子加 1（`ArticleDao.incrementVisits`），作者本人读取及草稿/待审核读取不计入；无按用户或 IP 去重。gated 真实 MySQL 通过（匿名读计 1、作者读不计、他人读累计 2），DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、残留 0。
+- [ ] 浏览量无去重，重复刷新、预取或爬虫会重复计数；文章点赞、收藏、关注与标签关联尚未实现（点赞需新增关系表，涉及 DDL 需单独授权）。
 
 ## 5. 任务验收记录
 
@@ -128,6 +130,7 @@
 | Phase 4 第三切片（修改密码） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 192 项、0 失败、0 错误、7 跳过；gated `UserPasswordMySqlTest` 真实 MySQL 1 项通过（2.7 秒） | 新增 `POST /user/password`、`ChangePasswordRequest`、`AuthSessionService.revokeOthers` 与 `AuthSessionDao.revokeActiveExcept`（批量撤销、保留当前会话）、`PASSWORD_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT`；契约 revision 15 / `6.5.0`；NAS 端到端验证通过（双会话改密后其他会话 401、当前会话 200、旧密码登录 20002、新密码登录 20000、库内会话撤销与 `$2a$` 落库确认、限流 9×20002+3×429+0×5xx、429 带 Retry-After）；已提交并推送 `4233698`，验证栈已清理 |
 | Phase 4 第四切片（文章草稿与发布） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 209 项、0 失败、0 错误、8 跳过（新增 `ArticleServiceTest` 8 项、`ArticleControllerTest` 8 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（2.6 秒）；DBX 复核 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0 | 新增 `PUT /article/{articleId}/publish`、`PUT /article/{articleId}/unpublish`；`POST /article` 改为创建草稿并由服务端维护 `state`/`createtime`/`updatetime`/`istop`/统计字段；`GET /article`、`GET /article/{articleId}`、`POST /article/search` 增加可见性规则（公开只读已发布、草稿仅作者可见）；`ArticleService` 改为构造器注入；契约 revision 16 / `6.6.0`。未做浏览器/前端联调，未执行 DDL；已提交并推送 `96995a3` |
 | Phase 4 第五切片（文章审核与管理员权限） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 227 项、0 失败、0 错误、8 跳过（`ArticleServiceTest` 15 项、`ArticleControllerTest` 54 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（3.6 秒）；DBX 复核 `tb_article` 3 → 3、`tb_user` 2 → 2、`tb_user_role` 0 → 0、临时数据残留 0 | 新增 `PUT /article/{articleId}/submit`（作者）、`PUT /article/{articleId}/approve`、`PUT /article/{articleId}/reject`（仅 `ADMIN`，非管理员 403）；文章状态新增 `2` 待审核；`GET /article/{articleId}` 与 `POST /article/search` 对管理员放开可见性；新增只读 `UserRole`/`UserRoleDao`；契约 revision 17 / `6.7.0`。未做浏览器/前端联调，未执行 DDL；已提交并推送 `f35d3cb` |
+| Phase 4 第六切片（文章浏览量） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 232 项、0 失败、0 错误、8 跳过（`ArticleServiceTest` 18 项、`ArticleControllerTest` 56 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（5.7 秒）；DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、`tb_article`/`tb_user`/`tb_user_role` 计数不变、残留 0 | 新增 `ArticleDao.incrementVisits`（原生 `UPDATE tb_article SET visits = visits + 1`，`@Modifying`+`@Transactional`）；`ArticleService.findById` 对非作者读取已发布文章累加浏览量并回填响应值；契约 revision 18 / `6.8.0`。未做浏览器/前端联调，未执行 DDL；待提交推送 |
 
 ## 6. 变更记录
 
@@ -232,6 +235,9 @@
 - 测试：`ArticleServiceTest` 增至 15 项、`ArticleControllerTest` 增至 54 项（新增未认证三入口、作者提交、非作者拒绝、非管理员 403、管理员通过/驳回、错误状态、管理员读取草稿）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 通过（草稿→发布→下架→提交→非管理员拒绝→管理员通过→再次提交→管理员驳回，临时管理员与文章按主键清理），DBX 复核 `tb_article` 3 → 3、`tb_user` 2 → 2、`tb_user_role` 0 → 0、残留 0；全量 `mvn test` 227 项、0 失败、0 错误、8 跳过。
 - 契约同步 revision `17` / `6.7.0`（兼容性新增）：三件套、README 接口表与集成限制说明已更新。
 - 本切片已提交并推送 `master` 为 `f35d3cb`；revision 10–17 均待前端消费（前端指针仍为 revision `9`）。
+- 启动 Phase 4 第六切片（文章浏览量）：新增 `ArticleDao.incrementVisits`（原生 `UPDATE tb_article SET visits = visits + 1 WHERE id = :id`，`@Modifying(clearAutomatically, flushAutomatically)` + `@Transactional`）；`ArticleService.findById` 在文章为已发布且访问者不是作者（含匿名）时累加一次浏览量，并把响应中的 `visits` 回填为累加后的值；作者读取本人文章、读取草稿/待审核均不计入。无按用户/IP 去重。
+- 测试：`ArticleServiceTest` 增至 18 项、`ArticleControllerTest` 增至 56 项（非作者/匿名读取计数、作者与草稿不计数、公开读取响应 +1）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 通过（发布后匿名读计 1、作者读不计、他人读累计 2；临时文章与管理员按主键清理），DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、`tb_article`/`tb_user`/`tb_user_role` 计数不变、残留 0；全量 `mvn test` 232 项、0 失败、0 错误、8 跳过。
+- 契约同步 revision `18` / `6.8.0`（兼容性新增）：三件套、README 接口表与集成限制说明已更新。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -244,7 +250,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 下一片建议进入文章筛选/标签关联（标签关联需 DDL 与跨服务数据，先评审）或文章浏览量/点赞/收藏/关注，先定义权限规则、接口契约与验收测试，再实现 Controller；文章草稿/发布/审核已交付，注意沿用「公开只读已发布、草稿与待审核仅作者与管理员可见」的可见性规则。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。对 NAS 的写操作已获用户授权，验证与清理方式见 2026-10-14 记录（提交后在 NAS 重建验证栈做端到端、完成后 `down -v` 清理）。
+1. 下一片建议进入文章点赞/收藏/关注或标签关联：文章点赞需新增关系表（涉及 DDL，先评审并单独授权），标签关联需跨服务数据与 DDL；也可先做无需 DDL 的增强（如文章列表按时间/热度排序、可扩展搜索）。先定义权限规则、接口契约与验收测试，再实现 Controller；注意沿用「公开只读已发布、草稿与待审核仅作者与管理员可见」的可见性规则。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。对 NAS 的写操作已获用户授权，验证与清理方式见 2026-10-14 记录（提交后在 NAS 重建验证栈做端到端、完成后 `down -v` 清理）。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。

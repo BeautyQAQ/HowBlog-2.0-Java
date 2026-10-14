@@ -1,15 +1,14 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.7.0",
-  "revision": 17,
+  "contractVersion": "6.8.0",
+  "revision": 18,
   "updatedAt": "2026-10-14",
-  "latestChangeId": "API-20261014-017",
+  "latestChangeId": "API-20261014-018",
   "latestChangeType": "feature",
   "breaking": false,
-  "requiresFrontendAction": true,
+  "requiresFrontendAction": false,
   "changedAreas": [
-    "article-review",
-    "article-admin-visibility"
+    "article-view-count"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

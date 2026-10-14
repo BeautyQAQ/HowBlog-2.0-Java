@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import javax.persistence.criteria.Predicate;
 
 @Service
@@ -37,7 +38,7 @@ public class ArticleService {
 
     /**
      * 按 ID 查询文章。已发布文章公开可见；草稿与待审核文章仅作者本人或管理员可见，
-     * 其他访问者按资源不存在处理。
+     * 其他访问者按资源不存在处理。非作者读取已发布文章时累加一次浏览量。
      */
     public Article findById(String id, String viewerId) {
         Article article = articleDao.findById(id).orElseThrow(ResourceNotFoundException::new);
@@ -45,6 +46,11 @@ public class ArticleService {
                 || (viewerId != null && (viewerId.equals(article.getUserid()) || isAdministrator(viewerId)));
         if (!visible) {
             throw new ResourceNotFoundException();
+        }
+        if (Article.STATE_PUBLISHED.equals(article.getState())
+                && !Objects.equals(article.getUserid(), viewerId)
+                && articleDao.incrementVisits(id) == 1) {
+            article.setVisits(article.getVisits() == null ? 1 : article.getVisits() + 1);
         }
         return article;
     }

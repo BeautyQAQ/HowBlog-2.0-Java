@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.7.0`
-> 当前同步 revision：`17`
+> 当前契约版本：`6.8.0`
+> 当前同步 revision：`18`
 > 最后更新：`2026-10-14`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -177,7 +177,7 @@ REST 接口返回 `Result`：
 | `updatetime` | datetime/null | 更新时间；由服务端维护 |
 | `ispublic` | string | 是否公开 |
 | `istop` | string | 是否置顶；新增时服务端置为 `0` |
-| `visits` | integer/null | 浏览量；新增时服务端初始化为 `0` |
+| `visits` | integer/null | 浏览量；新增时服务端初始化为 `0`，非作者读取已发布文章时服务端累加 |
 | `thumbup` | integer/null | 点赞数；新增时服务端初始化为 `0` |
 | `comment` | integer/null | 评论数；新增时服务端初始化为 `0` |
 | `state` | string | 文章状态：`0` 草稿、`1` 已发布、`2` 待审核；由服务端维护 |
@@ -464,7 +464,7 @@ REST 接口返回 `Result`：
 
 ### GET `/article/{articleId}`
 
-按 ID 查询文章。已发布文章对所有人可见；草稿与待审核文章只有作者本人或管理员（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或文章非公开而访问者既不是作者也不是管理员时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
+按 ID 查询文章。已发布文章对所有人可见；草稿与待审核文章只有作者本人或管理员（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或文章非公开而访问者既不是作者也不是管理员时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。读取已发布文章时，若访问者不是作者（包括未登录访问者），服务端对 `visits` 执行数据库端原子加 1，响应中的 `visits` 为累加后的值；作者读取自己的文章、读取草稿或待审核文章均不计入。该接口因此具有副作用，不保证幂等。
 
 ### POST `/article`
 
@@ -721,6 +721,7 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
 - 已有基础必填、非空白、非负计数和分页校验；最大文本长度、关联资源存在性仍未全面校验。
 - 文章已有草稿/已发布/待审核状态与作者权限：新增即为草稿，`publish`/`unpublish`/`submit` 仅作者可调用，`approve`/`reject` 仅数据库 `ADMIN` 可调用，公开列表只返回已发布文章，草稿与待审核仅作者或管理员可见。作者仍可自行 `publish`，审核（`submit` → `approve`/`reject`）为可选路径；未授予任何真实账号管理员权限，未授权时审核接口对所有用户返回 403。
+- 文章浏览量在 `GET /article/{articleId}` 读取已发布文章时累加（排除作者本人），没有按用户或 IP 去重，重复刷新、预取或爬虫会重复计数；草稿与待审核文章不计入。
 - 用户表已有手机号唯一约束（`uk_tb_user_mobile`，迁移见 [mysql-user-mobile-unique.sql](mysql-user-mobile-unique.sql)）：并发注册由数据库约束兜底并返回 `20005`。历史数据中已存在的重复手机号仍会让该手机号注册被拒绝，需要人工处理。后端尚未提供邮箱/短信验证与密码找回。
 - 资料接口只允许修改 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`；`mobile`、密码、计数与统计字段不可通过该接口修改。头像目前只是 URL 字符串，后端不提供文件上传。
 - 修改密码会撤销该用户的其他所有会话（其他设备需要重新登录，IM 连接随后关闭），发起修改的当前会话保持有效；仍没有全设备退出或管理员撤销接口。

@@ -362,6 +362,31 @@ class ArticleControllerTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.state").value(Article.STATE_DRAFT));
     }
 
+    @Test
+    void countsViewsForPublishedArticlesFromNonAuthors() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_PUBLISHED);
+        article.setVisits(5);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.incrementVisits("one")).thenReturn(1);
+        mvc.perform(get("/article/one"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.visits").value(6));
+        verify(articleDao).incrementVisits("one");
+    }
+
+    @Test
+    void doesNotCountAuthorViews() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_PUBLISHED);
+        article.setVisits(5);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        mvc.perform(get("/article/one").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.visits").value(5));
+        verify(articleDao, never()).incrementVisits(any());
+    }
+
     private String authorization() {
                 when(sessions.isActive("a".repeat(64), "author")).thenReturn(true);
                 return "Bearer " + tokens.issueToken("author", "test-user", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));

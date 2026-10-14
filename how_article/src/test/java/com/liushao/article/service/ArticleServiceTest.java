@@ -57,6 +57,14 @@ class ArticleServiceTest {
         return article;
     }
 
+    private Article publishedArticle(String userId, int visits) {
+        Article article = new Article();
+        article.setUserid(userId);
+        article.setState(Article.STATE_PUBLISHED);
+        article.setVisits(visits);
+        return article;
+    }
+
     @Test
     void addCreatesDraftWithServerOwnedFields() {
         when(idWorker.nextId()).thenReturn(123L);
@@ -220,6 +228,43 @@ class ArticleServiceTest {
         assertSame(draft, service().findById("one", "admin"));
         assertThrows(ResourceNotFoundException.class, () -> service().findById("one", "other"));
         assertThrows(ResourceNotFoundException.class, () -> service().findById("one", null));
+    }
+
+    @Test
+    void countsVisitsWhenNonAuthorReadsPublishedArticle() {
+        Article article = publishedArticle("author", 5);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.incrementVisits("one")).thenReturn(1);
+
+        Article result = service().findById("one", "viewer");
+
+        assertEquals(6, result.getVisits());
+        verify(articleDao).incrementVisits("one");
+    }
+
+    @Test
+    void countsAnonymousReadsOfPublishedArticles() {
+        Article article = publishedArticle("author", 0);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.incrementVisits("one")).thenReturn(1);
+
+        Article result = service().findById("one", null);
+
+        assertEquals(1, result.getVisits());
+        verify(articleDao).incrementVisits("one");
+    }
+
+    @Test
+    void doesNotCountAuthorOrDraftReads() {
+        Article article = publishedArticle("author", 5);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        Article draft = draft("author");
+        when(articleDao.findById("draft")).thenReturn(Optional.of(draft));
+
+        assertEquals(5, service().findById("one", "author").getVisits());
+        service().findById("draft", "author");
+
+        verify(articleDao, never()).incrementVisits(any());
     }
 
     @Test

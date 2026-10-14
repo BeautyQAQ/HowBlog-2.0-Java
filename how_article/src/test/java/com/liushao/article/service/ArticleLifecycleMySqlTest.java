@@ -90,6 +90,14 @@ class ArticleLifecycleMySqlTest {
                 Timestamp firstPublish = storedCreatetime(jdbc, article.getId());
                 assertNotNull(firstPublish);
 
+                stage = "published reads count visits";
+                service.findById(article.getId(), null);
+                assertEquals(1, storedVisits(jdbc, article.getId()));
+                service.findById(article.getId(), AUTHOR);
+                assertEquals(1, storedVisits(jdbc, article.getId()));
+                service.findById(article.getId(), "someone-else");
+                assertEquals(2, storedVisits(jdbc, article.getId()));
+
                 stage = "republish keeps first publish time";
                 assertTrue(service.publish(article.getId(), AUTHOR));
                 assertEquals(firstPublish, storedCreatetime(jdbc, article.getId()));
