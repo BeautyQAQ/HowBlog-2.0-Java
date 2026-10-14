@@ -4,7 +4,7 @@
 
 - 更新时间：2026-10-14
 - 当前阶段：Phase 4 第一切片完成——新增公开注册接口 `POST /user/register`（BCrypt 即时哈希、手机号查重、注册来源 IP 限流），契约 revision `12`，真实 MySQL 验收通过；Phase 3 两切片已推送并在 NAS Docker 上验证；会话清理默认关闭
-- 当前接口契约：revision `12`、contract version `6.3.0`（兼容性新增）；本轮改动待提交推送
+- 当前接口契约：revision `12`、contract version `6.3.0`（兼容性新增）；已提交并推送 `master`（`1c03b70`）
 - 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 开始推进，注册切片通过全量 `mvn test` 171 项（5 项外部测试跳过）与 gated 真实 MySQL 注册验收
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
@@ -114,7 +114,7 @@
 | Phase 2 真实存储验收运行 | 2026-10-12 | 2026-10-12 | `HOW_ARTICLE_TEST_CONFIG` 指向文章服务既有 application.yml（不新建含凭证文件、命令行不出现凭证）；`mvn -pl how_article -am test -Dtest=CommentThumbupMySqlRedisTest -Dsurefire.failIfNoSpecifiedTests=false`；DBX 运行前后只读对照 | 1 项通过、0 失败（4.3 秒），6 组场景在真实 MySQL + Redis 上全部通过。运行前后 `nas-mysql` how-blog-smaill：评论 3、关系 0、计数总和 29、`thumbup-test-` 残留 0；`nas-redis` db3 DBSIZE 20 → 20。用户明确授权使用该测试环境库；未执行 DDL，既有数据未改动 |
 | Phase 3 第一切片（配置环境化） | 2026-10-13 | 2026-10-13 | JDK 21 全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；`HOW_ARTICLE_TEST_CONFIG` 指向包装后的 `application.yml` 复跑 gated 点赞真实存储测试 1 项通过；新增跨域单元/MVC/真实 WebSocket 跨源测试 | 端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 环境变量覆盖（默认值不变，凭证按用户决定保留）；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与三服务 `WebMvcConfigurer`；契约 revision 10 / `6.1.0`，前端无需改代码。未提交 |
 | Phase 3 第二切片（容器化与可观测性） | 2026-10-13 | 2026-10-14 | JDK 21 全量 `mvn test` 159 项、0 失败、0 错误、4 跳过；`bash scripts/check-api-docs.sh` 输出“接口文档一致：revision 11 / API-20261013-011 / contract 6.2.0”；`bash scripts/check-secrets.sh` 通过 | 新增请求关联 ID 过滤器（4 项测试，含伪造换行请求头不回显）、三服务 CORS 暴露 `X-Request-Id`、`/actuator/health`、共用 Dockerfile、`docker-compose.yml`、CI；契约 revision 11 / `6.2.0`。容器镜像构建与真实启动由 NAS 上 `howblog-dev` 栈验证（compose/Dockerfile 与推送提交逐字节一致、五容器 healthy、三健康端点 UP、真实 GET 返回 20000、`X-Request-Id` 生效）；已提交并推送 `bb098e3`。本会话对 NAS 的远程写（重建、`docker exec`）被权限拦截，未执行 |
-| Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL |
+| Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL；已提交并推送 `1c03b70` |
 
 ## 6. 变更记录
 
@@ -193,6 +193,7 @@
 - 启动 Phase 4 第一切片：新增公开注册接口 `POST /user/register`（手机号 11 位以 1 开头、密码 8–64、昵称可选并去除首尾空白）、服务端 BCrypt 即时哈希与雪花 ID、注册时间及计数初始化、手机号查重（含历史重复数据拒绝）；新增 `REGISTER_IP` 限流维度（默认每 60 秒 10 次），拦截器在业务前执行。
 - 测试：`UserServiceTest` 3 项、`UserControllerTest` 8 项（成功/重复/5 组非法参数/限流先于业务）、gated `UserRegisterMySqlTest` 真实 MySQL 验收通过；全量 `mvn test` 171 项、0 失败、0 错误、5 跳过。首次 gated 运行因 surefire 以模块目录为工作目录、相对路径解析失败，改用绝对路径后通过（未改测试代码）。DBX 复核测试环境 `register-test` 残留为 0。
 - 契约同步 revision `12` / `6.3.0`（兼容性新增）：三件套、`docs/admin-operations.md`（注册限流变量与部署边界）与 README 接口表已更新。
+- 本切片已提交并推送 `master` 为 `1c03b70`；前端同步指针仍为 revision `9`，revision 10–12 尚未被前端消费。
 
 后续每次开发完成一个任务后，必须同步更新：
 
