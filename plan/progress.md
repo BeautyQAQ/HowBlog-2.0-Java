@@ -4,7 +4,7 @@
 
 - 更新时间：2026-10-14
 - 当前阶段：Phase 4 第四切片完成——文章草稿/发布能力（新增即草稿、服务端维护生命周期字段、`publish`/`unpublish` 仅作者、公开列表只返回已发布、草稿仅作者可见）已通过本地测试与 gated 真实 MySQL 验收，契约 revision `16`；会话清理默认关闭
-- 当前接口契约：revision `16`、contract version `6.6.0`（兼容性新增）；已提交并推送 `master`
+- 当前接口契约：revision `16`、contract version `6.6.0`（兼容性新增）；已提交并推送 `master`（`96995a3`）
 - 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码、文章草稿/发布四个切片并完成唯一约束加固，全量 `mvn test` 209 项（8 项跳过）通过
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
@@ -124,7 +124,7 @@
 | Phase 4 第二切片（资料读取与更新） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 181 项、0 失败、0 错误、6 跳过；gated `UserProfileMySqlTest` 真实 MySQL 1 项通过（2.5 秒）；DBX 复核 `profile-test` 残留 0 | 新增 `GET/PUT /user/profile`、`ProfileResponse`/`ProfileUpdateRequest`、部分更新与非法字段忽略；契约 revision 13 / `6.4.0`。H2 MVC 认证测试需 `UTC_TIMESTAMP` 别名且目标类必须为 public；未做浏览器/前端联调，未执行 DDL；已提交并推送 `e6a2447` |
 | Phase 4 唯一约束加固（revision 14） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 183 项、0 失败、0 错误、6 跳过（新增 2 项约束冲突测试）；DBX 在 `nas-mysql` 执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0，`SHOW INDEX` 确认唯一索引生效）；NAS 旧 howblog-dev 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷保留 | 新增 `UserIntegrityExceptionHandler`（唯一约束冲突→200/20005，其它完整性异常保持脱敏 500）、可重复执行的 `docs/mysql-user-mobile-unique.sql`、初始化脚本改唯一索引、compose 增加 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；NAS 端到端验证：五容器 healthy、注册/重复/非法/登录/资料读写/退出全通过，20 路并发注册 1 成功 19 重复 0 异常，库内唯一索引与 BCrypt 确认；已提交并推送 `86f887a`，验证栈已清理 |
 | Phase 4 第三切片（修改密码） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 192 项、0 失败、0 错误、7 跳过；gated `UserPasswordMySqlTest` 真实 MySQL 1 项通过（2.7 秒） | 新增 `POST /user/password`、`ChangePasswordRequest`、`AuthSessionService.revokeOthers` 与 `AuthSessionDao.revokeActiveExcept`（批量撤销、保留当前会话）、`PASSWORD_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT`；契约 revision 15 / `6.5.0`；NAS 端到端验证通过（双会话改密后其他会话 401、当前会话 200、旧密码登录 20002、新密码登录 20000、库内会话撤销与 `$2a$` 落库确认、限流 9×20002+3×429+0×5xx、429 带 Retry-After）；已提交并推送 `4233698`，验证栈已清理 |
-| Phase 4 第四切片（文章草稿与发布） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 209 项、0 失败、0 错误、8 跳过（新增 `ArticleServiceTest` 8 项、`ArticleControllerTest` 8 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（2.6 秒）；DBX 复核 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0 | 新增 `PUT /article/{articleId}/publish`、`PUT /article/{articleId}/unpublish`；`POST /article` 改为创建草稿并由服务端维护 `state`/`createtime`/`updatetime`/`istop`/统计字段；`GET /article`、`GET /article/{articleId}`、`POST /article/search` 增加可见性规则（公开只读已发布、草稿仅作者可见）；`ArticleService` 改为构造器注入；契约 revision 16 / `6.6.0`。未做浏览器/前端联调，未执行 DDL；待提交推送 |
+| Phase 4 第四切片（文章草稿与发布） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 209 项、0 失败、0 错误、8 跳过（新增 `ArticleServiceTest` 8 项、`ArticleControllerTest` 8 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（2.6 秒）；DBX 复核 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0 | 新增 `PUT /article/{articleId}/publish`、`PUT /article/{articleId}/unpublish`；`POST /article` 改为创建草稿并由服务端维护 `state`/`createtime`/`updatetime`/`istop`/统计字段；`GET /article`、`GET /article/{articleId}`、`POST /article/search` 增加可见性规则（公开只读已发布、草稿仅作者可见）；`ArticleService` 改为构造器注入；契约 revision 16 / `6.6.0`。未做浏览器/前端联调，未执行 DDL；已提交并推送 `96995a3` |
 
 ## 6. 变更记录
 
@@ -224,6 +224,7 @@
 - 可见性收敛：`GET /article` 仅返回已发布；`GET /article/{articleId}` 对草稿仅作者可见、其他人按 404 处理；`POST /article/search` 匿名只返回已发布、带有效 token 时额外返回本人文章（含草稿）。`ArticleService` 由字段注入改为构造器注入。
 - 测试：`ArticleServiceTest` 8 项（含用模拟 Criteria API 校验搜索可见性谓词）、`ArticleControllerTest` 新增 8 项；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 通过（草稿落库、发布/重复发布/下架、非作者拒绝），临时文章按主键删除，DBX 复核 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0；全量 `mvn test` 209 项、0 失败、0 错误、8 跳过。
 - 契约同步 revision `16` / `6.6.0`（兼容性新增）：三件套、README 接口表与集成限制说明已更新。
+- 本切片已提交并推送 `master` 为 `96995a3`；revision 10–16 均待前端消费（前端指针仍为 revision `9`）。
 
 后续每次开发完成一个任务后，必须同步更新：
 

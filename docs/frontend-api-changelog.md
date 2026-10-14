@@ -202,4 +202,4 @@
 - 前端动作：可接入草稿/发布工作流：创建后得到草稿，调用 `publish` 上架、`unpublish` 下架；作者用带 token 的 `GET /article/{articleId}` 或 `POST /article/search`（`userid` 为自己）查看自己的草稿。注意 `GET /article` 与匿名 `POST /article/search` 不再返回草稿。保存 revision `16`。
 - 部署动作：无需迁移；`tb_article.state` 为既有的 `VARCHAR(16)` 列，草稿/已发布复用该列，现有 `state` 为 `1` 的历史文章视为已发布，无需改写数据。
 - 验证：新增 `ArticleServiceTest` 8 项（草稿创建字段、发布/重复发布/下架、非作者与缺失拒绝、草稿可见性、搜索可见性）、`ArticleControllerTest` 新增 8 项（含未认证发布/下架、草稿默认字段、作者发布/下架、非作者拒绝、草稿对匿名 404 对作者 200、列表只返回已发布）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 上通过（草稿落库 `state=0` 且 `createtime` 为空、发布写入 `state=1` 与发布时间、重复发布保留首次时间、下架保留发布时间、非作者拒绝；临时文章按主键删除，DBX 复核运行前后 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0）；全量 `mvn test` 209 项、0 失败、0 错误、8 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
-- 发布状态：已随后端提交推送至 `origin/master`（提交号见台账）；前端可接入草稿/发布工作流。
+- 发布状态：已随后端提交 `96995a3` 推送至 `origin/master`；前端可接入草稿/发布工作流。
