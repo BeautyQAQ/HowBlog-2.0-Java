@@ -97,6 +97,17 @@ HOW_ARTICLE_TEST_CONFIG=/path/to/integration-test-config.yml \
 - 数据边界：只创建 `thumbup-test-` 前缀的临时评论、随机用户 ID 和对应的 `thumbup_`/`thumbup:v2:` 键，成功和失败路径结束时都精确删除；不执行 DDL、不清库、不删除其他键，也不触碰既有评论和点赞计数。
 - 跳过只表示当前环境没有提供隔离配置，不表示行为已验证；运行前确认目标库和 Redis 属于可安全写入的测试环境。
 
+## 文章点赞迁移与真实存储集成测试
+
+- 文章点赞使用唯一关系表 `tb_article_thumbup`；部署前对目标库执行 [mysql-article-thumbup-migration.sql](mysql-article-thumbup-migration.sql)（可重复执行），新库由 [mysql-init.sql](mysql-init.sql) 直接建表。2026-10-14 经用户授权在测试环境库执行。
+- 历史 `tb_article.thumbup` 计数保留、不重算、不补关系；迁移脚本不写入或修改既有文章与计数。文章点赞仅对已发布文章生效，无取消点赞接口。
+- gated `ArticleThumbupMySqlTest` 在真实 MySQL 上覆盖首次/重复、同用户 20 路并发恰好一次成功、10 用户并发全部成功、文章不存在与非已发布拒绝；临时文章与关系按主键精确清理，不执行 DDL、不清库。
+
+```bash
+HOW_ARTICLE_TEST_CONFIG=/absolute/path/to/how_article/src/main/resources/application.yml \
+  mvn -pl how_article -am test -Dtest=ArticleThumbupMySqlTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
 ## 服务配置环境变量（Phase 3）
 
 三个服务的端口、MySQL 与跨域来源支持环境变量覆盖；未设置时使用 `application.yml` 中的默认值，默认值保持不变。

@@ -8,6 +8,7 @@ import com.liushao.article.service.ArticleService;
 import com.liushao.entity.PageResult;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
+import com.liushao.web.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.validation.annotation.Validated;
@@ -125,6 +126,22 @@ public class ArticleController {
     @RequireAuthentication
     public Result reject(@PathVariable String articleId) {
         return reviewResult(articleService.reject(articleId, CurrentUserContext.require().getUserId()), "已驳回");
+    }
+
+    /**
+     * 文章点赞数据接口
+     */
+    @RequestMapping(value = "thumbup/{articleId}", method = RequestMethod.PUT)
+    @RequireAuthentication
+    public Result thumbup(@PathVariable String articleId) {
+        ArticleService.ThumbupResult result = articleService.thumbup(articleId, CurrentUserContext.require().getUserId());
+        if (result == ArticleService.ThumbupResult.DUPLICATE) {
+            return new Result(false, StatusCode.REMOTEERROR, "不能重复点赞");
+        }
+        if (result == ArticleService.ThumbupResult.NOT_FOUND) {
+            throw new ResourceNotFoundException();
+        }
+        return new Result(true, StatusCode.OK, "点赞成功");
     }
 
     private Result reviewResult(ArticleService.TransitionResult result, String successMessage) {

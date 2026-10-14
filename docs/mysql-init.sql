@@ -86,3 +86,12 @@ CREATE TABLE IF NOT EXISTS `tb_comment_thumbup` (
   CONSTRAINT `fk_comment_thumbup_comment` FOREIGN KEY (`commentid`)
     REFERENCES `tb_comment` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='评论点赞唯一关系';
+
+CREATE TABLE IF NOT EXISTS `tb_article_thumbup` (
+  `articleid` VARCHAR(64) NOT NULL,
+  `userid` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`articleid`, `userid`),
+  KEY `idx_tb_article_thumbup_userid` (`userid`),
+  CONSTRAINT `fk_article_thumbup_article` FOREIGN KEY (`articleid`)
+    REFERENCES `tb_article` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文章点赞唯一关系';

@@ -20,6 +20,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.ArticleThumbupDao;
 import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
@@ -45,9 +46,10 @@ class ArticleServiceTest {
     @Mock private ArticleDao articleDao;
     @Mock private IdWorker idWorker;
     @Mock private UserRoleDao userRoleDao;
+    @Mock private ArticleThumbupDao articleThumbupDao;
 
     private ArticleService service() {
-        return new ArticleService(articleDao, idWorker, userRoleDao);
+        return new ArticleService(articleDao, idWorker, userRoleDao, articleThumbupDao);
     }
 
     private Article draft(String userId) {
@@ -265,6 +267,52 @@ class ArticleServiceTest {
         service().findById("draft", "author");
 
         verify(articleDao, never()).incrementVisits(any());
+    }
+
+    @Test
+    void thumbupRegistersRelationAndIncrementsOnce() {
+        Article article = publishedArticle("author", 0);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        when(articleThumbupDao.insertIfAbsent("one", "viewer")).thenReturn(1);
+        when(articleDao.incrementThumbup("one")).thenReturn(1);
+
+        assertEquals(ArticleService.ThumbupResult.SUCCESS, service().thumbup("one", "viewer"));
+
+        verify(articleDao).incrementThumbup("one");
+    }
+
+    @Test
+    void thumbupRejectsDuplicateWithoutIncrementing() {
+        Article article = publishedArticle("author", 3);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        when(articleThumbupDao.insertIfAbsent("one", "viewer")).thenReturn(0);
+
+        assertEquals(ArticleService.ThumbupResult.DUPLICATE, service().thumbup("one", "viewer"));
+
+        verify(articleDao, never()).incrementThumbup(any());
+    }
+
+    @Test
+    void thumbupRejectsMissingAndUnpublishedArticles() {
+        when(articleDao.findByIdForUpdate("missing")).thenReturn(Optional.empty());
+        when(articleDao.findByIdForUpdate("draft")).thenReturn(Optional.of(draft("author")));
+
+        assertEquals(ArticleService.ThumbupResult.NOT_FOUND, service().thumbup("missing", "viewer"));
+        assertEquals(ArticleService.ThumbupResult.NOT_FOUND, service().thumbup("draft", "viewer"));
+
+        verify(articleThumbupDao, never()).insertIfAbsent(any(), any());
+    }
+
+    @Test
+    void thumbupReleasesClaimWhenCounterUpdateFails() {
+        Article article = publishedArticle("author", 0);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        when(articleThumbupDao.insertIfAbsent("one", "viewer")).thenReturn(1);
+        when(articleDao.incrementThumbup("one")).thenReturn(0);
+
+        assertEquals(ArticleService.ThumbupResult.NOT_FOUND, service().thumbup("one", "viewer"));
+
+        verify(articleThumbupDao).deleteClaim("one", "viewer");
     }
 
     @Test

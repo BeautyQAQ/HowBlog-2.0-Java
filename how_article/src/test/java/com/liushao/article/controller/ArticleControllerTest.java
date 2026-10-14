@@ -59,10 +59,12 @@ class ArticleControllerTest {
     @MockBean private RedisTemplate redisTemplate;
         @MockBean private com.liushao.auth.SessionVerifier sessions;
     @MockBean private com.liushao.article.dao.UserRoleDao userRoleDao;
+    @MockBean private com.liushao.article.dao.ArticleThumbupDao articleThumbupDao;
 
     @ParameterizedTest
     @CsvSource({"POST,/article", "PUT,/article/one", "DELETE,/article/one", "PUT,/article/one/publish",
             "PUT,/article/one/unpublish", "PUT,/article/one/submit", "PUT,/article/one/approve", "PUT,/article/one/reject",
+            "PUT,/article/thumbup/one",
             "POST,/comment", "PUT,/comment/one", "DELETE,/comment/one", "PUT,/comment/thumbup/one"})
     void rejectsUnauthenticatedWrites(String method, String path) throws Exception {
         mvc.perform(request(HttpMethod.valueOf(method), path).contentType(MediaType.APPLICATION_JSON).content("{}"))
@@ -385,6 +387,27 @@ class ArticleControllerTest {
         mvc.perform(get("/article/one").header("Authorization", authorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.visits").value(5));
         verify(articleDao, never()).incrementVisits(any());
+    }
+
+    @Test
+    void thumbupsArticleAndRejectsDuplicateAndMissing() throws Exception {
+        Article published = new Article();
+        published.setUserid("author");
+        published.setState(Article.STATE_PUBLISHED);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(published));
+        when(articleThumbupDao.insertIfAbsent("one", "author")).thenReturn(1);
+        when(articleDao.incrementThumbup("one")).thenReturn(1);
+        mvc.perform(put("/article/thumbup/one").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+
+        when(articleThumbupDao.insertIfAbsent("one", "author")).thenReturn(0);
+        mvc.perform(put("/article/thumbup/one").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20004));
+        verify(articleDao, times(1)).incrementThumbup("one");
+
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.empty());
+        mvc.perform(put("/article/thumbup/one").header("Authorization", authorization()))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001));
     }
 
     private String authorization() {

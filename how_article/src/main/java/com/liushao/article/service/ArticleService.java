@@ -1,6 +1,7 @@
 package com.liushao.article.service;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.ArticleThumbupDao;
 import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
@@ -11,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -25,11 +27,14 @@ public class ArticleService {
     private final ArticleDao articleDao;
     private final IdWorker idWorker;
     private final UserRoleDao userRoleDao;
+    private final ArticleThumbupDao articleThumbupDao;
 
-    public ArticleService(ArticleDao articleDao, IdWorker idWorker, UserRoleDao userRoleDao) {
+    public ArticleService(ArticleDao articleDao, IdWorker idWorker, UserRoleDao userRoleDao,
+                          ArticleThumbupDao articleThumbupDao) {
         this.articleDao = articleDao;
         this.idWorker = idWorker;
         this.userRoleDao = userRoleDao;
+        this.articleThumbupDao = articleThumbupDao;
     }
 
     public List<Article> findAll() {
@@ -153,6 +158,27 @@ public class ArticleService {
         return TransitionResult.SUCCESS;
     }
 
+    /**
+     * 文章点赞：仅已发布文章可点赞；先登记唯一关系，再对计数做数据库端原子加 1。
+     * 同一用户重复点赞返回 DUPLICATE 且不计数；文章不存在或非已发布返回 NOT_FOUND。
+     */
+    @Transactional
+    public ThumbupResult thumbup(String id, String userId) {
+        if (articleDao.findByIdForUpdate(id)
+                .filter(article -> Article.STATE_PUBLISHED.equals(article.getState()))
+                .isEmpty()) {
+            return ThumbupResult.NOT_FOUND;
+        }
+        if (articleThumbupDao.insertIfAbsent(id, userId) != 1) {
+            return ThumbupResult.DUPLICATE;
+        }
+        if (articleDao.incrementThumbup(id) != 1) {
+            articleThumbupDao.deleteClaim(id, userId);
+            return ThumbupResult.NOT_FOUND;
+        }
+        return ThumbupResult.SUCCESS;
+    }
+
     public boolean update(Article article, String userId) {
         return articleDao.findById(article.getId())
                 .filter(existing -> userId.equals(existing.getUserid()))
@@ -228,5 +254,11 @@ public class ArticleService {
         SUCCESS,
         NOT_ALLOWED,
         INVALID_STATE
+    }
+
+    public enum ThumbupResult {
+        SUCCESS,
+        DUPLICATE,
+        NOT_FOUND
     }
 }

@@ -173,6 +173,7 @@ mvn -pl how_user spring-boot:run
 | `PUT` | `/article/{articleId}/submit` | 提交审核，需要作者 Bearer JWT |
 | `PUT` | `/article/{articleId}/approve` | 审核通过，需要管理员 Bearer JWT |
 | `PUT` | `/article/{articleId}/reject` | 审核驳回，需要管理员 Bearer JWT |
+| `PUT` | `/article/thumbup/{articleId}` | 文章点赞，需要 Bearer JWT |
 | `DELETE` | `/article/{articleId}` | 删除文章，需要作者 Bearer JWT |
 | `POST` | `/article/search/{page}/{size}` | 分页条件查询文章 |
 | `GET` | `/comment` | 查询全部评论 |

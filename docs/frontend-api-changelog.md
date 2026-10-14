@@ -227,3 +227,15 @@
 - 部署动作：无需迁移；复用既有 `tb_article.visits` 列。
 - 验证：新增 `ArticleServiceTest` 3 项（非作者/匿名读取计数、作者与草稿不计数）、`ArticleControllerTest` 2 项（公开读取 +1、作者读取不计数）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 上通过（发布后匿名读取计 1、作者读取不计、其他用户读取累计为 2；临时数据按主键清理，DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、残留 0）；全量 `mvn test` 232 项、0 失败、0 错误、8 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
 - 发布状态：已随后端提交 `52e7474` 推送至 `origin/master`。
+
+## Revision 19 - API-20261014-019
+
+- 日期：2026-10-14
+- 类型：能力新增
+- 破坏性变更：否；contract version `6.9.0`。
+- 影响范围：文章服务新增 `PUT /article/thumbup/{articleId}`；新增唯一关系表 `tb_article_thumbup`；`Article.thumbup` 由点赞接口原子累加。
+- 变更内容：新增文章点赞接口，仅已发布文章可点赞。服务端在 `tb_article_thumbup` 登记 `(articleId, userId)` 唯一关系并对 `tb_article.thumbup` 原子加 1；同一用户重复点赞返回 HTTP 200、`flag: false`、`code: 20004`、`message: "不能重复点赞"` 且不计数；文章不存在或非已发布返回 HTTP 404、`code: 20001`。并发同一用户点赞由唯一关系与行锁保证只成功一次。当前无取消点赞接口。
+- 前端动作：可接入点赞按钮：调用 `PUT /article/thumbup/{articleId}`，成功（20000）后本地 `thumbup` 加 1；`20004` 表示已点赞过，按钮应置为已点赞态且不要重复计数；`404` 按文章不可见处理。保存 revision `19`。
+- 部署动作：部署前对目标库执行 [mysql-article-thumbup-migration.sql](mysql-article-thumbup-migration.sql)（可重复执行）；新库由初始化脚本直接建表。历史 `tb_article.thumbup` 计数保留、不重算、不补关系。
+- 验证：新增 `ArticleServiceTest` 4 项（首次计数、重复拒绝、缺失/非已发布拒绝、计数失败回滚关系）、`ArticleControllerTest` 2 项（未认证入口参数化 + 首次成功/重复 20004/缺失 404 用例）；gated `ArticleThumbupMySqlTest` 在测试环境真实 MySQL 上通过（首次/重复、同用户 20 路并发恰好 1 成功 19 重复、10 用户并发全成功、文章不存在与非已发布拒绝；临时数据按主键清理，DBX 复核既有 3 篇文章 `thumbup` 88/45/32 与 `visits` 不变、`tb_article_thumbup` 0 行、残留 0）；DDL 已获用户授权并在测试环境执行（`CREATE TABLE IF NOT EXISTS tb_article_thumbup`）；全量 `mvn test` 239 项、0 失败、0 错误、9 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
+- 发布状态：已随后端提交推送至 `origin/master`（提交号见台账）。
