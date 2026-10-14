@@ -4,7 +4,7 @@
 
 - 更新时间：2026-10-14
 - 当前阶段：Phase 4 第八切片完成——用户关注/取关与粉丝/关注列表（唯一关系表 `tb_user_follow` + 原子计数 + 目标行锁；DDL 经用户授权并在测试环境执行）已通过本地测试与 gated 真实 MySQL 验收，契约 revision `20`；会话清理默认关闭
-- 当前接口契约：revision `20`、contract version `6.10.0`（兼容性新增）；已提交并推送 `master`
+- 当前接口契约：revision `20`、contract version `6.10.0`（兼容性新增）；已提交并推送 `master`（`a8b05df`）
 - 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码、文章草稿/发布、文章审核、文章浏览量、文章点赞、用户关注八个切片并完成唯一约束加固，全量 `mvn test` 251 项（10 项跳过）通过；文章收藏按用户决定不做
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
@@ -134,7 +134,7 @@
 | Phase 4 第五切片（文章审核与管理员权限） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 227 项、0 失败、0 错误、8 跳过（`ArticleServiceTest` 15 项、`ArticleControllerTest` 54 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（3.6 秒）；DBX 复核 `tb_article` 3 → 3、`tb_user` 2 → 2、`tb_user_role` 0 → 0、临时数据残留 0 | 新增 `PUT /article/{articleId}/submit`（作者）、`PUT /article/{articleId}/approve`、`PUT /article/{articleId}/reject`（仅 `ADMIN`，非管理员 403）；文章状态新增 `2` 待审核；`GET /article/{articleId}` 与 `POST /article/search` 对管理员放开可见性；新增只读 `UserRole`/`UserRoleDao`；契约 revision 17 / `6.7.0`。未做浏览器/前端联调，未执行 DDL；已提交并推送 `f35d3cb` |
 | Phase 4 第六切片（文章浏览量） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 232 项、0 失败、0 错误、8 跳过（`ArticleServiceTest` 18 项、`ArticleControllerTest` 56 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（5.7 秒）；DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、`tb_article`/`tb_user`/`tb_user_role` 计数不变、残留 0 | 新增 `ArticleDao.incrementVisits`（原生 `UPDATE tb_article SET visits = visits + 1`，`@Modifying`+`@Transactional`）；`ArticleService.findById` 对非作者读取已发布文章累加浏览量并回填响应值；契约 revision 18 / `6.8.0`。未做浏览器/前端联调，未执行 DDL；已提交并推送 `52e7474` |
 | Phase 4 第七切片（文章点赞） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 239 项、0 失败、0 错误、9 跳过（`ArticleServiceTest` 22 项、`ArticleControllerTest` 58 项）；gated `ArticleThumbupMySqlTest` 真实 MySQL 1 项通过（3.7 秒）；DBX 在 `nas-mysql` 执行 `CREATE TABLE IF NOT EXISTS tb_article_thumbup`（created=1、0 行）并复核既有 3 篇文章 `thumbup` 88/45/32 与 `visits` 不变、残留 0 | 新增 `ArticleThumbup`/`ArticleThumbupId`/`ArticleThumbupDao`（`INSERT IGNORE ... SELECT` 关系登记 + `deleteClaim`）、`ArticleDao.findByIdForUpdate`/`incrementThumbup`、`ArticleService.thumbup`（`@Transactional`）与 `ThumbupResult`；新增 `PUT /article/thumbup/{articleId}`（需认证，重复 20004、缺失/非已发布 404）；`docs/mysql-article-thumbup-migration.sql` 与初始化脚本、运维说明同步；契约 revision 19 / `6.9.0`。DDL 已执行；未做浏览器/前端联调；已提交并推送 `5a2f154` |
-| Phase 4 第八切片（用户关注/取关与粉丝/关注列表） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 251 项、0 失败、0 错误、10 跳过（`UserFollowServiceTest` 7 项、`UserControllerTest` 29 项）；gated `UserFollowMySqlTest` 真实 MySQL 1 项通过（3.6 秒，首次并发失败、加 `FOR UPDATE` 后通过）；DBX 在 `nas-mysql` 执行 `CREATE TABLE IF NOT EXISTS tb_user_follow`（created=1、0 行）并复核既有用户 `fanscount`/`followcount` 256/32、188/45 不变、残留 0 | 新增 `UserFollow`/`UserFollowId`/`UserFollowDao`、`UserSummaryResponse`、`UserFollowService`；`UserDao` 新增 `findByIdForUpdate`、粉丝/关注分页查询与四个原子计数更新；新增 `PUT`/`DELETE /user/follow/{userId}`（需认证；自己 20001、重复/未关注 20005、缺失 404）与 `GET /user/{userId}/fans|follows/{page}/{size}`（公开，返回 `PageResult<UserSummary>`）；`docs/mysql-user-follow-migration.sql` 与初始化脚本、运维说明同步；契约 revision 20 / `6.10.0`。DDL 已执行；未做浏览器/前端联调；待提交推送 |
+| Phase 4 第八切片（用户关注/取关与粉丝/关注列表） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 251 项、0 失败、0 错误、10 跳过（`UserFollowServiceTest` 7 项、`UserControllerTest` 29 项）；gated `UserFollowMySqlTest` 真实 MySQL 1 项通过（3.6 秒，首次并发失败、加 `FOR UPDATE` 后通过）；DBX 在 `nas-mysql` 执行 `CREATE TABLE IF NOT EXISTS tb_user_follow`（created=1、0 行）并复核既有用户 `fanscount`/`followcount` 256/32、188/45 不变、残留 0 | 新增 `UserFollow`/`UserFollowId`/`UserFollowDao`、`UserSummaryResponse`、`UserFollowService`；`UserDao` 新增 `findByIdForUpdate`、粉丝/关注分页查询与四个原子计数更新；新增 `PUT`/`DELETE /user/follow/{userId}`（需认证；自己 20001、重复/未关注 20005、缺失 404）与 `GET /user/{userId}/fans|follows/{page}/{size}`（公开，返回 `PageResult<UserSummary>`）；`docs/mysql-user-follow-migration.sql` 与初始化脚本、运维说明同步；契约 revision 20 / `6.10.0`。DDL 已执行；未做浏览器/前端联调；已提交并推送 `a8b05df` |
 
 ## 6. 变更记录
 
@@ -254,6 +254,7 @@
 - 并发修复：gated 首次运行在「同一关系 20 路并发」阶段失败（工作线程抛异常，疑似锁竞争）；改为写入前对目标用户行 `SELECT ... FOR UPDATE`（沿用评论/文章点赞的加锁模式）后复测通过；并在 gated 竞速辅助方法中解包 `ExecutionException` 以显示真实异常类型。
 - 测试：`UserFollowServiceTest` 7 项、`UserControllerTest` 增至 29 项（未认证、关注成功/自己/重复/缺失、取关、列表与分页、`CorsConfigurationTest` 补齐 `UserFollowService` 依赖）；gated `UserFollowMySqlTest` 在测试环境真实 MySQL 通过（首次/重复/自己/缺失/取关、粉丝与关注列表、同关系 20 路并发恰好 1 成功 19 重复），临时用户与关系按主键清理，DBX 复核既有用户计数不变、`tb_user_follow` 0 行、残留 0；全量 `mvn test` 251 项、0 失败、0 错误、10 跳过。
 - 契约同步 revision `20` / `6.10.0`（兼容性新增）：三件套、README 接口表、运维说明与集成限制说明已更新。
+- 本切片已提交并推送 `master` 为 `a8b05df`；revision 10–20 均待前端消费（前端指针仍为 revision `9`）。
 
 后续每次开发完成一个任务后，必须同步更新：
 

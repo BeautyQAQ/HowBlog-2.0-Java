@@ -250,4 +250,4 @@
 - 前端动作：可接入关注按钮与粉丝/关注列表：关注成功（20000）后本地更新计数；`20005` 表示已关注或未关注，按当前状态处理；`20001`「不能关注自己」时禁用对自己的关注。列表按 `PageResult` 读取 `rows`。保存 revision `20`。
 - 部署动作：部署前对目标库执行 [mysql-user-follow-migration.sql](mysql-user-follow-migration.sql)（可重复执行）；新库由初始化脚本直接建表。历史 `fanscount`/`followcount` 保留、不重算、不补关系。
 - 验证：新增 `UserFollowServiceTest` 7 项、`UserControllerTest` 新增 4 项（未认证、关注成功/自己/重复/缺失、取关、列表与分页）；gated `UserFollowMySqlTest` 在测试环境真实 MySQL 上通过（首次/重复/自己/缺失/取关、粉丝与关注列表、同一关系 20 路并发恰好 1 成功 19 重复；首次并发因锁竞争失败，写入前对目标用户行加 `FOR UPDATE` 后通过；临时用户与关系按主键清理，DBX 复核既有用户 `fanscount`/`followcount` 256/32 与 188/45 不变、`tb_user_follow` 0 行、残留 0）；DDL 已获用户授权并在测试环境执行（`CREATE TABLE IF NOT EXISTS tb_user_follow`）；全量 `mvn test` 251 项、0 失败、0 错误、10 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
-- 发布状态：已随后端提交推送至 `origin/master`（提交号见台账）。
+- 发布状态：已随后端提交 `a8b05df` 推送至 `origin/master`。
