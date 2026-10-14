@@ -3,8 +3,8 @@
 ## 1. 当前状态
 
 - 更新时间：2026-10-14
-- 当前阶段：Phase 4 第三切片完成——新增修改密码接口 `POST /user/password`（旧密码校验、成功后撤销其他会话、当前会话保留），契约 revision `15`，本地全量测试与 gated 真实 MySQL 验收通过；NAS 端到端验证在本提交后进行；会话清理默认关闭
-- 当前接口契约：revision `15`、contract version `6.5.0`（兼容性新增）；本轮改动待提交推送
+- 当前阶段：Phase 4 第三切片完成——修改密码接口 `POST /user/password`（旧密码校验、成功后撤销其他会话、当前会话保留、PASSWORD_IP 限流）已通过本地测试、gated 真实 MySQL 与 NAS 端到端验证，契约 revision `15` 已推送（`4233698`）；会话清理默认关闭
+- 当前接口契约：revision `15`、contract version `6.5.0`（兼容性新增）；已提交并推送 `master`（`4233698`）
 - 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码三个切片并完成唯一约束加固，全量 `mvn test` 192 项（7 项跳过）通过
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
@@ -121,7 +121,7 @@
 | Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL；已提交并推送 `1c03b70` |
 | Phase 4 第二切片（资料读取与更新） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 181 项、0 失败、0 错误、6 跳过；gated `UserProfileMySqlTest` 真实 MySQL 1 项通过（2.5 秒）；DBX 复核 `profile-test` 残留 0 | 新增 `GET/PUT /user/profile`、`ProfileResponse`/`ProfileUpdateRequest`、部分更新与非法字段忽略；契约 revision 13 / `6.4.0`。H2 MVC 认证测试需 `UTC_TIMESTAMP` 别名且目标类必须为 public；未做浏览器/前端联调，未执行 DDL；已提交并推送 `e6a2447` |
 | Phase 4 唯一约束加固（revision 14） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 183 项、0 失败、0 错误、6 跳过（新增 2 项约束冲突测试）；DBX 在 `nas-mysql` 执行 `ALTER TABLE tb_user DROP INDEX idx_tb_user_mobile, ADD UNIQUE KEY uk_tb_user_mobile (mobile)`（Records: 0，`SHOW INDEX` 确认唯一索引生效）；NAS 旧 howblog-dev 栈（5 容器、3 镜像、网络）与 `/tmp/howblog-dev` 已删除，MySQL 卷保留 | 新增 `UserIntegrityExceptionHandler`（唯一约束冲突→200/20005，其它完整性异常保持脱敏 500）、可重复执行的 `docs/mysql-user-mobile-unique.sql`、初始化脚本改唯一索引、compose 增加 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；NAS 端到端验证：五容器 healthy、注册/重复/非法/登录/资料读写/退出全通过，20 路并发注册 1 成功 19 重复 0 异常，库内唯一索引与 BCrypt 确认；已提交并推送 `86f887a`，验证栈已清理 |
-| Phase 4 第三切片（修改密码） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 192 项、0 失败、0 错误、7 跳过；gated `UserPasswordMySqlTest` 真实 MySQL 1 项通过（2.7 秒） | 新增 `POST /user/password`、`ChangePasswordRequest`、`AuthSessionService.revokeOthers` 与 `AuthSessionDao.revokeActiveExcept`（批量撤销、保留当前会话）、`PASSWORD_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT`；契约 revision 15 / `6.5.0`。NAS 端到端验证随后进行 |
+| Phase 4 第三切片（修改密码） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 192 项、0 失败、0 错误、7 跳过；gated `UserPasswordMySqlTest` 真实 MySQL 1 项通过（2.7 秒） | 新增 `POST /user/password`、`ChangePasswordRequest`、`AuthSessionService.revokeOthers` 与 `AuthSessionDao.revokeActiveExcept`（批量撤销、保留当前会话）、`PASSWORD_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT`；契约 revision 15 / `6.5.0`；NAS 端到端验证通过（双会话改密后其他会话 401、当前会话 200、旧密码登录 20002、新密码登录 20000、库内会话撤销与 `$2a$` 落库确认、限流 9×20002+3×429+0×5xx、429 带 Retry-After）；已提交并推送 `4233698`，验证栈已清理 |
 
 ## 6. 变更记录
 
@@ -215,6 +215,8 @@
 - 启动 Phase 4 第三切片（修改密码）：新增 `POST /user/password`（需认证；旧密码错误返回 200/20002「旧密码不正确」；新密码 8–64 个字符；成功后 BCrypt 重哈希并调用 `AuthSessionService.revokeOthers` 批量撤销该用户其他活跃会话、保留当前会话）；`AuthSessionDao.revokeActiveExcept` 为 JPQL 批量更新（flushAutomatically）；认证限流新增 `PASSWORD_IP` 维度（默认每 60 秒 10 次，`HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT`）。
 - 测试：`UserPasswordTest` 4 项（H2 全链路：认证、旧密码错误、非法新密码、双会话撤销与当前会话保留、新旧密码登录行为）、`UserServiceTest` 3 项、限流参数化改为 CsvSource 覆盖五个入口；gated `UserPasswordMySqlTest` 真实 MySQL 验收通过（双会话、改密后会话 A 保留、会话 B 撤销、旧密码失效、新密码可登录；临时会话/摘要/用户按主键清理）；全量 `mvn test` 192 项、0 失败、0 错误、7 跳过。
 - 契约同步 revision `15` / `6.5.0`（兼容性新增）：三件套、`admin-operations.md`（PASSWORD_IP 变量与五个入口）与 README 接口表已更新。
+- NAS 端到端验证（提交 `4233698` 重建验证栈）：五容器 healthy、三健康端点 UP；注册→双会话登录→会话 A 改密 200/20000；会话 B 访问 401、刷新 401，会话 A 访问 200（保留）；旧密码登录 20002、新密码登录 20000；库内三个会话中 B 已撤销、其余活跃，密码为 `$2a$`；`PASSWORD_IP` 限流 12 连发为 9×20002 + 3×429 + 0×5xx，429 带 `Retry-After: 58` 与 no-store。
+- 验证栈已清理（`docker compose down -v`、镜像与目录删除），NAS 无 howblog 残留（旧 `howblog-dev_mysql-data` 卷按约定保留）。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -227,7 +229,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 修改密码切片已提交后在 NAS 上做端到端验证（双会话改密、其他会话 401、当前会话 200、旧密码失效、新密码登录、`PASSWORD_IP` 429），验证后清理验证栈。下一片建议进入文章能力（草稿/发布/审核状态与作者权限），先定义数据模型、权限规则、接口契约与验收测试，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。对 NAS 的写操作已获用户授权，验证与清理方式见 2026-10-14 记录。
+1. 下一片建议进入文章能力（草稿/发布/审核状态与作者权限），先定义数据模型、权限规则、接口契约与验收测试，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。对 NAS 的写操作已获用户授权，验证与清理方式见 2026-10-14 记录（提交后在 NAS 重建验证栈做端到端、完成后 `down -v` 清理）。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。
