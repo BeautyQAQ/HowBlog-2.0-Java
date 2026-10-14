@@ -68,6 +68,14 @@ public class AuthSessionService {
         return true;
     }
 
+    @Transactional(timeout = 15)
+    public int revokeOthers(String userId, String keepSessionId) {
+        if (userId == null || userId.isBlank() || keepSessionId == null || keepSessionId.isBlank()) {
+            return 0;
+        }
+        return sessions.revokeActiveExcept(userId, keepSessionId, now());
+    }
+
     private Optional<AuthSession> lockSession(String refreshToken) {
         if (refreshToken == null || !refreshToken.matches("[0-9a-f]{64}")) return Optional.empty();
         return refreshTokens.findSessionId(hash(refreshToken)).flatMap(sessions::lockById);

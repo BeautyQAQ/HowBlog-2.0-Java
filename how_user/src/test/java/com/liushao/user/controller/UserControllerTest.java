@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,11 +53,11 @@ class UserControllerTest {
     @MockBean private AuthRateLimiter rateLimiter;
 
     @ParameterizedTest
-    @ValueSource(strings = {"login", "register", "refresh", "logout"})
-    void rateLimitRunsBeforeAuthenticationParsingAndBusiness(String action) throws Exception {
-        Scope scope = Scope.valueOf(action.toUpperCase(java.util.Locale.ROOT) + "_IP");
+    @CsvSource({"/user/login, LOGIN_IP", "/user/register, REGISTER_IP", "/user/password, PASSWORD_IP",
+            "/user/refresh, REFRESH_IP", "/user/logout, LOGOUT_IP"})
+    void rateLimitRunsBeforeAuthenticationParsingAndBusiness(String path, Scope scope) throws Exception {
         doThrow(new AuthRateLimiter.Rejected(7)).when(rateLimiter).check(scope, "127.0.0.1");
-        mvc.perform(post("/user/" + action).header("Authorization", "Bearer invalid")
+        mvc.perform(post(path).header("Authorization", "Bearer invalid")
                         .header("Origin", "https://example.test").header("X-Forwarded-For", "198.51.100.1")
                         .contentType(MediaType.APPLICATION_JSON).content("{"))
                 .andExpect(status().isTooManyRequests()).andExpect(header().string("Retry-After", "7"))

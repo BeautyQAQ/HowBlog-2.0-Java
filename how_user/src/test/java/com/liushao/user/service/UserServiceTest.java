@@ -3,6 +3,7 @@ package com.liushao.user.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
+import com.liushao.user.pojo.ChangePasswordRequest;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.pojo.ProfileResponse;
@@ -26,8 +27,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,6 +47,9 @@ class UserServiceTest {
     @Mock
     private com.liushao.util.IdWorker idWorker;
 
+    @Mock
+    private com.liushao.user.dao.AuthSessionDao sessionDao;
+
     private PasswordEncoder passwordEncoder;
     private UserService userService;
 
@@ -53,8 +60,7 @@ class UserServiceTest {
                 "01234567890123456789012345678901",
                 Duration.ofMinutes(30)
         );
-        AuthSessionService sessions = new AuthSessionService(
-            org.mockito.Mockito.mock(com.liushao.user.dao.AuthSessionDao.class),
+        AuthSessionService sessions = new AuthSessionService(sessionDao,
             org.mockito.Mockito.mock(com.liushao.user.dao.AuthRefreshTokenDao.class), userDao);
         userService = new UserService(userDao, passwordEncoder, jwtTokenService, sessions, idWorker);
     }
@@ -194,6 +200,57 @@ class UserServiceTest {
         assertNull(userService.updateProfile("missing", new ProfileUpdateRequest()));
 
         verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+    }
+
+    @Test
+    void changePasswordStoresNewHashAndRevokesOtherSessions() {
+        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(userWithPassword(passwordEncoder.encode(PASSWORD))));
+        when(sessionDao.revokeActiveExcept(eq("10001"), eq("session-1"), any(java.time.LocalDateTime.class))).thenReturn(2);
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setOldPassword(PASSWORD);
+        request.setNewPassword("new-password-456");
+
+        assertEquals(UserService.PasswordChangeResult.SUCCESS, userService.changePassword("10001", "session-1", request));
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(saved.capture());
+        assertTrue(passwordEncoder.matches("new-password-456", saved.getValue().getPassword()));
+        verify(sessionDao).revokeActiveExcept(eq("10001"), eq("session-1"), any(java.time.LocalDateTime.class));
+    }
+
+    @Test
+    void changePasswordRejectsWrongOldPasswordWithoutWriting() {
+        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(userWithPassword(passwordEncoder.encode(PASSWORD))));
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setOldPassword("wrong-password-1");
+        request.setNewPassword("new-password-456");
+
+        assertEquals(UserService.PasswordChangeResult.WRONG_PASSWORD,
+                userService.changePassword("10001", "session-1", request));
+
+        verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+        verifyNoInteractions(sessionDao);
+    }
+
+    @Test
+    void changePasswordRejectsInvalidInputAndMissingUser() {
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setOldPassword(PASSWORD);
+        request.setNewPassword("short");
+        assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", request));
+        assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", null));
+        request.setNewPassword("x".repeat(65));
+        assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", request));
+        request.setNewPassword("new-password-456");
+        request.setOldPassword("   ");
+        assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", request));
+
+        when(userDao.findById("missing")).thenReturn(java.util.Optional.empty());
+        request.setOldPassword(PASSWORD);
+        assertNull(userService.changePassword("missing", "session-1", request));
+
+        verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+        verifyNoInteractions(sessionDao);
     }
 
     private RegisterRequest registerRequest(String mobile, String password, String nickname) {

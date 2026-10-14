@@ -1,9 +1,11 @@
 package com.liushao.user.controller;
 
+import com.liushao.auth.AuthenticatedUser;
 import com.liushao.auth.CurrentUserContext;
 import com.liushao.auth.RequireAuthentication;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
+import com.liushao.user.pojo.ChangePasswordRequest;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.pojo.ProfileResponse;
@@ -72,6 +74,23 @@ public class UserController {
         return profile == null
                 ? ResponseEntity.status(401).body(new Result(false, StatusCode.ACCESSERROR, "请先登录"))
                 : ResponseEntity.ok(new Result(true, StatusCode.OK, "修改成功", profile));
+    }
+
+    @PostMapping("password")
+    @RequireAuthentication
+    public ResponseEntity<Result> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        AuthenticatedUser user = CurrentUserContext.require();
+        UserService.PasswordChangeResult result =
+                userService.changePassword(user.getUserId(), user.getSessionId(), request);
+        if (result == null) {
+            return ResponseEntity.status(401).body(new Result(false, StatusCode.ACCESSERROR, "请先登录"));
+        }
+        return switch (result) {
+            case SUCCESS -> ResponseEntity.ok(new Result(true, StatusCode.OK, "修改成功"));
+            case WRONG_PASSWORD -> ResponseEntity.ok(new Result(false, StatusCode.LOGINERROR, "旧密码不正确"));
+            case INVALID -> ResponseEntity.badRequest()
+                    .body(new Result(false, StatusCode.ERROR, "请求格式或参数不正确"));
+        };
     }
 
     @PostMapping("refresh")

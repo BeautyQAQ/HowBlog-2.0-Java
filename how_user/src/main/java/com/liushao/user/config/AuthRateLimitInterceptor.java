@@ -24,6 +24,7 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
         Scope scope = switch (method.getMethod().getName()) {
             case "login" -> Scope.LOGIN_IP;
             case "register" -> Scope.REGISTER_IP;
+            case "changePassword" -> Scope.PASSWORD_IP;
             case "refresh" -> Scope.REFRESH_IP;
             case "logout" -> Scope.LOGOUT_IP;
             default -> null;

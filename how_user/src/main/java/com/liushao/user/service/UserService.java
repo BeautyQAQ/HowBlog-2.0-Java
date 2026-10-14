@@ -2,6 +2,7 @@ package com.liushao.user.service;
 
 import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
+import com.liushao.user.pojo.ChangePasswordRequest;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.pojo.ProfileResponse;
@@ -95,6 +96,33 @@ public class UserService {
 
     public enum RegisterResult {
         SUCCESS, INVALID, DUPLICATE
+    }
+
+    @Transactional(timeout = 15)
+    public PasswordChangeResult changePassword(String userId, String currentSessionId, ChangePasswordRequest request) {
+        // 与 ChangePasswordRequest 注解保持同一规则，防止绕过控制器直接调用
+        if (request == null
+                || !StringUtils.hasText(request.getOldPassword())
+                || !StringUtils.hasText(request.getNewPassword())
+                || request.getNewPassword().length() < 8
+                || request.getNewPassword().length() > 64) {
+            return PasswordChangeResult.INVALID;
+        }
+        User user = userDao.findById(userId).orElse(null);
+        if (user == null) {
+            return null;
+        }
+        if (!passwordsMatch(request.getOldPassword(), user.getPassword())) {
+            return PasswordChangeResult.WRONG_PASSWORD;
+        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userDao.save(user);
+        sessions.revokeOthers(userId, currentSessionId);
+        return PasswordChangeResult.SUCCESS;
+    }
+
+    public enum PasswordChangeResult {
+        SUCCESS, INVALID, WRONG_PASSWORD
     }
 
     @Transactional(timeout = 15)

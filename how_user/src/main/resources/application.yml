@@ -34,6 +34,7 @@ how:
       login-ip-limit: ${HOW_AUTH_RATE_LIMIT_LOGIN_IP_LIMIT:20}
       login-account-limit: ${HOW_AUTH_RATE_LIMIT_LOGIN_ACCOUNT_LIMIT:10}
       register-ip-limit: ${HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT:10}
+      password-ip-limit: ${HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT:10}
       refresh-ip-limit: ${HOW_AUTH_RATE_LIMIT_REFRESH_IP_LIMIT:60}
       logout-ip-limit: ${HOW_AUTH_RATE_LIMIT_LOGOUT_IP_LIMIT:30}
     cleanup:

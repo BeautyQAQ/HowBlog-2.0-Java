@@ -42,6 +42,7 @@
 | `HOW_AUTH_RATE_LIMIT_LOGIN_IP_LIMIT` | 20 | 每来源登录额度 |
 | `HOW_AUTH_RATE_LIMIT_LOGIN_ACCOUNT_LIMIT` | 10 | 每账号登录额度，跨来源共享 |
 | `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT` | 10 | 每来源注册额度 |
+| `HOW_AUTH_RATE_LIMIT_PASSWORD_IP_LIMIT` | 10 | 每来源修改密码额度 |
 | `HOW_AUTH_RATE_LIMIT_REFRESH_IP_LIMIT` | 60 | 每来源刷新额度 |
 | `HOW_AUTH_RATE_LIMIT_LOGOUT_IP_LIMIT` | 30 | 每来源退出额度，与登录/刷新独立 |
 
@@ -49,7 +50,7 @@
 - 键仅包含维度和 HMAC-SHA256 摘要，密钥复用 JWT secret，账号作 NFKC、首尾空白及小写规范化；不把原始手机号、IP、密码或 token 写入 Redis 键/值及应用日志。所有用户实例必须使用相同的 secret、Redis、命名空间、阈值及窗口；改 secret/前缀、清空/淘汰 Redis 键会重置额度，配置变更需协调发布。
 - 权限至少需要脚本执行/缓存及 GET、INCR、PTTL、PEXPIRE。容量需按窗口内不同来源/账号数评估，建议使用隔离的限流 Redis 和 noeviction，监控内存、拒绝数、503 及延迟；内存耗尽会关闭认证入口，不应自动绕过限流。
 - 应用使用 `request.getRemoteAddr()`，不直接采信转发头。默认不启用转发头解析；需要真实代理来源时，先在可信入口覆盖外部头、限制直连来源，再配置和验证容器代理处理。否则反向代理/NAT 下会共享来源额度。
-- 只保护四个认证 POST 入口（登录、注册、刷新、退出），不限制 OPTIONS、WebSocket 或其他 REST。仍需网关请求体大小、全局/连接限流和告警；被盗凭据分布式滥用、不受控代理链及大规模拒绝服务不能靠本功能解决。
+- 只保护五个认证 POST 入口（登录、注册、修改密码、刷新、退出），不限制 OPTIONS、WebSocket 或其他 REST。仍需网关请求体大小、全局/连接限流和告警；被盗凭据分布式滥用、不受控代理链及大规模拒绝服务不能靠本功能解决。
 - 验收 429 的 Retry-After/CORS/no-store、账号跨 IP 共享、独立退出额度、Redis 断连后的 503，以及恢复后的请求。不要把 429/503 当作服务端退出成功。
 
 ## 用户注册部署

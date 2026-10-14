@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.4.1",
-  "revision": 14,
+  "contractVersion": "6.5.0",
+  "revision": 15,
   "updatedAt": "2026-10-14",
-  "latestChangeId": "API-20261014-014",
-  "latestChangeType": "fix",
+  "latestChangeId": "API-20261014-015",
+  "latestChangeType": "feature",
   "breaking": false,
   "requiresFrontendAction": false,
   "changedAreas": [
-    "user-mobile-unique-constraint",
-    "user-registration-concurrency"
+    "user-password-change",
+    "auth-rate-limit-password-ip"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",
