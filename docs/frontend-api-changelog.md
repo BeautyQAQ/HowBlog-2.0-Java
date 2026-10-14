@@ -203,3 +203,15 @@
 - 部署动作：无需迁移；`tb_article.state` 为既有的 `VARCHAR(16)` 列，草稿/已发布复用该列，现有 `state` 为 `1` 的历史文章视为已发布，无需改写数据。
 - 验证：新增 `ArticleServiceTest` 8 项（草稿创建字段、发布/重复发布/下架、非作者与缺失拒绝、草稿可见性、搜索可见性）、`ArticleControllerTest` 新增 8 项（含未认证发布/下架、草稿默认字段、作者发布/下架、非作者拒绝、草稿对匿名 404 对作者 200、列表只返回已发布）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 上通过（草稿落库 `state=0` 且 `createtime` 为空、发布写入 `state=1` 与发布时间、重复发布保留首次时间、下架保留发布时间、非作者拒绝；临时文章按主键删除，DBX 复核运行前后 `tb_article` 3 → 3、`article-lifecycle-test` 残留 0）；全量 `mvn test` 209 项、0 失败、0 错误、8 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
 - 发布状态：已随后端提交 `96995a3` 推送至 `origin/master`；前端可接入草稿/发布工作流。
+
+## Revision 17 - API-20261014-017
+
+- 日期：2026-10-14
+- 类型：能力新增
+- 破坏性变更：否；contract version `6.7.0`。
+- 影响范围：文章服务新增 `PUT /article/{articleId}/submit`、`PUT /article/{articleId}/approve`、`PUT /article/{articleId}/reject`；文章状态新增「待审核」；`GET /article/{articleId}` 与 `POST /article/search` 增加管理员可见性。
+- 变更内容：文章状态新增 `2` 待审核。作者可 `submit` 将草稿提交审核（仅草稿可提交）；管理员（数据库 `ADMIN` 角色）可 `approve`（待审核→已发布，首次写入 `createtime`）或 `reject`（待审核→草稿）。非管理员调用 `approve`/`reject` 返回 HTTP 403、`code: 20003`；文章不存在返回 HTTP 404；状态不符返回 HTTP 200、`code: 20001`、`message: "文章状态不允许该操作"`。可见性扩展：待审核文章对公开列表与匿名搜索不可见，仅作者与管理员可见；管理员在 `GET /article/{articleId}` 与 `POST /article/search` 中不受可见性限制。作者原有的 `publish`/`unpublish` 保持不变，审核为可选路径。
+- 前端动作：可接入审核工作流：作者在草稿页调用 `submit`；管理端用 `POST /article/search`（`state: "2"`）列出待审核文章，调用 `approve`/`reject`。区分 403（非管理员）与 200/20001（状态不符）。保存 revision `17`。
+- 部署动作：无需迁移；复用既有 `tb_article.state` 列。管理员需由运维在 `tb_user_role` 授予 `ADMIN`（与标签管理同一张表），应用不自动授权；未授予前审核接口对所有用户返回 403。
+- 验证：新增 `ArticleServiceTest` 7 项（提交、非作者/错误状态/缺失、管理员校验、通过/驳回、错误状态、管理员可见性、管理员搜索不受限）、`ArticleControllerTest` 新增 11 项（含未认证三入口、作者提交、非作者提交拒绝、非管理员 403、管理员通过/驳回、错误状态、管理员读取草稿）；gated `ArticleLifecycleMySqlTest` 在测试环境真实 MySQL 上通过（草稿→发布→下架→提交→非管理员拒绝→管理员通过→再次提交→管理员驳回，含临时管理员与文章的精确清理；DBX 复核 `tb_article` 3 → 3、`tb_user` 2 → 2、`tb_user_role` 0 → 0、临时数据残留 0）；全量 `mvn test` 227 项、0 失败、0 错误、8 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
+- 发布状态：已随后端提交推送至 `origin/master`（提交号见台账）；前端可接入审核工作流。

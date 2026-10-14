@@ -58,10 +58,11 @@ class ArticleControllerTest {
         @MockBean private CommentThumbupDao commentThumbupDao;
     @MockBean private RedisTemplate redisTemplate;
         @MockBean private com.liushao.auth.SessionVerifier sessions;
+    @MockBean private com.liushao.article.dao.UserRoleDao userRoleDao;
 
     @ParameterizedTest
     @CsvSource({"POST,/article", "PUT,/article/one", "DELETE,/article/one", "PUT,/article/one/publish",
-            "PUT,/article/one/unpublish",
+            "PUT,/article/one/unpublish", "PUT,/article/one/submit", "PUT,/article/one/approve", "PUT,/article/one/reject",
             "POST,/comment", "PUT,/comment/one", "DELETE,/comment/one", "PUT,/comment/thumbup/one"})
     void rejectsUnauthenticatedWrites(String method, String path) throws Exception {
         mvc.perform(request(HttpMethod.valueOf(method), path).contentType(MediaType.APPLICATION_JSON).content("{}"))
@@ -279,9 +280,97 @@ class ArticleControllerTest {
         verify(articleDao, never()).findAll();
     }
 
+    @Test
+    void submitMovesOwnDraftToPendingReview() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        mvc.perform(put("/article/one/submit").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+        assertEquals(Article.STATE_PENDING, article.getState());
+        verify(articleDao).save(article);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"other", "missing"})
+    void rejectsSubmitFromNonAuthor(String owner) throws Exception {
+        Article article = new Article();
+        article.setUserid(owner);
+        article.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
+        mvc.perform(put("/article/one/submit").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20003));
+        verify(articleDao, never()).save(any());
+    }
+
+    @Test
+    void approveAndRejectRequireAdministrator() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_PENDING);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        for (String action : List.of("approve", "reject")) {
+            mvc.perform(put("/article/one/" + action).header("Authorization", authorization()))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(20003));
+        }
+        verify(articleDao, never()).save(any());
+    }
+
+    @Test
+    void administratorCanApprovePendingArticle() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_PENDING);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        mvc.perform(put("/article/one/approve").header("Authorization", adminAuthorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+        assertEquals(Article.STATE_PUBLISHED, article.getState());
+        assertNotNull(article.getCreatetime());
+    }
+
+    @Test
+    void administratorCanRejectPendingArticle() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_PENDING);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        mvc.perform(put("/article/one/reject").header("Authorization", adminAuthorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+        assertEquals(Article.STATE_DRAFT, article.getState());
+    }
+
+    @Test
+    void reviewRejectsWrongState() throws Exception {
+        Article article = new Article();
+        article.setUserid("author");
+        article.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        mvc.perform(put("/article/one/approve").header("Authorization", adminAuthorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20001))
+                .andExpect(jsonPath("$.message").value("文章状态不允许该操作"));
+        verify(articleDao, never()).save(any());
+    }
+
+    @Test
+    void showsDraftToAdministrator() throws Exception {
+        Article draft = new Article();
+        draft.setUserid("author");
+        draft.setState(Article.STATE_DRAFT);
+        when(articleDao.findById("one")).thenReturn(Optional.of(draft));
+        mvc.perform(get("/article/one").header("Authorization", adminAuthorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.state").value(Article.STATE_DRAFT));
+    }
+
     private String authorization() {
                 when(sessions.isActive("a".repeat(64), "author")).thenReturn(true);
                 return "Bearer " + tokens.issueToken("author", "test-user", "a".repeat(64), java.time.Instant.now().plusSeconds(3600));
+    }
+
+    private String adminAuthorization() {
+                when(sessions.isActive("b".repeat(64), "admin")).thenReturn(true);
+                when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
+                return "Bearer " + tokens.issueToken("admin", "admin-user", "b".repeat(64), java.time.Instant.now().plusSeconds(3600));
     }
 
         @Test

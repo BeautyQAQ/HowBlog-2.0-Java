@@ -101,6 +101,41 @@ public class ArticleController {
     }
 
     /**
+     * 提交审核数据接口
+     */
+    @RequestMapping(value = "{articleId}/submit", method = RequestMethod.PUT)
+    @RequireAuthentication
+    public Result submit(@PathVariable String articleId) {
+        return reviewResult(articleService.submit(articleId, CurrentUserContext.require().getUserId()), "已提交审核");
+    }
+
+    /**
+     * 审核通过数据接口（仅管理员）
+     */
+    @RequestMapping(value = "{articleId}/approve", method = RequestMethod.PUT)
+    @RequireAuthentication
+    public Result approve(@PathVariable String articleId) {
+        return reviewResult(articleService.approve(articleId, CurrentUserContext.require().getUserId()), "审核通过");
+    }
+
+    /**
+     * 审核驳回数据接口（仅管理员）
+     */
+    @RequestMapping(value = "{articleId}/reject", method = RequestMethod.PUT)
+    @RequireAuthentication
+    public Result reject(@PathVariable String articleId) {
+        return reviewResult(articleService.reject(articleId, CurrentUserContext.require().getUserId()), "已驳回");
+    }
+
+    private Result reviewResult(ArticleService.TransitionResult result, String successMessage) {
+        return switch (result) {
+            case SUCCESS -> new Result(true, StatusCode.OK, successMessage);
+            case NOT_ALLOWED -> new Result(false, StatusCode.ACCESSERROR, "无权操作或文章不存在");
+            case INVALID_STATE -> new Result(false, StatusCode.ERROR, "文章状态不允许该操作");
+        };
+    }
+
+    /**
      * 条件查询
      */
     @RequestMapping(value="search/{page}/{size}", method = RequestMethod.POST)

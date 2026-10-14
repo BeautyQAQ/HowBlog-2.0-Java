@@ -6,6 +6,7 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 import javax.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
@@ -31,30 +32,33 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import com.liushao.article.dao.ArticleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
+import com.liushao.web.ForbiddenException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * 由 HOW_ARTICLE_TEST_CONFIG 显式启用的真实 MySQL 验收：验证文章草稿/发布/下架状态与
- * 发布时间在真实数据库上的落库行为。测试数据按主键精确清理，默认跳过。
+ * 由 HOW_ARTICLE_TEST_CONFIG 显式启用的真实 MySQL 验收：验证文章草稿/发布/审核状态与
+ * 发布时间在真实数据库上的落库行为。测试数据（文章、临时管理员）按主键精确清理，默认跳过。
  */
 @EnabledIfEnvironmentVariable(named = "HOW_ARTICLE_TEST_CONFIG", matches = ".+")
 class ArticleLifecycleMySqlTest {
     private static final String AUTHOR = "article-lifecycle-test-author";
 
     @Test
-    void verifiesDraftPublishLifecycleAgainstRealMySql() {
+    void verifiesDraftPublishReviewLifecycleAgainstRealMySql() {
         ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
                 org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         ch.qos.logback.classic.Level previousLevel = logger.getLevel();
         logger.setLevel(ch.qos.logback.classic.Level.OFF);
         String stage = "configuration";
         List<String> articleIds = new ArrayList<>();
+        List<String> adminIds = new ArrayList<>();
         JdbcTemplate jdbc = null;
         try {
             Properties settings = readSettings();
@@ -98,10 +102,32 @@ class ArticleLifecycleMySqlTest {
                 stage = "non-author publish";
                 assertFalse(service.publish(article.getId(), "someone-else"));
                 assertEquals(Article.STATE_DRAFT, storedState(jdbc, article.getId()));
+
+                stage = "submit for review";
+                assertEquals(ArticleService.TransitionResult.SUCCESS, service.submit(article.getId(), AUTHOR));
+                assertEquals(Article.STATE_PENDING, storedState(jdbc, article.getId()));
+
+                stage = "non-administrator review is rejected";
+                assertThrows(ForbiddenException.class, () -> service.approve(article.getId(), AUTHOR));
+                assertEquals(Article.STATE_PENDING, storedState(jdbc, article.getId()));
+
+                stage = "administrator approval";
+                String adminId = "alt-admin-" + UUID.randomUUID();
+                insertAdministrator(jdbc, adminId);
+                adminIds.add(adminId);
+                assertEquals(ArticleService.TransitionResult.SUCCESS, service.approve(article.getId(), adminId));
+                assertEquals(Article.STATE_PUBLISHED, storedState(jdbc, article.getId()));
+                assertEquals(firstPublish, storedCreatetime(jdbc, article.getId()));
+
+                stage = "administrator rejection returns article to draft";
+                assertTrue(service.unpublish(article.getId(), AUTHOR));
+                assertEquals(ArticleService.TransitionResult.SUCCESS, service.submit(article.getId(), AUTHOR));
+                assertEquals(ArticleService.TransitionResult.SUCCESS, service.reject(article.getId(), adminId));
+                assertEquals(Article.STATE_DRAFT, storedState(jdbc, article.getId()));
             }
             stage = "cleanup verification";
-            cleanup(jdbc, articleIds);
-            assertNoLeftovers(jdbc, articleIds);
+            cleanup(jdbc, articleIds, adminIds);
+            assertNoLeftovers(jdbc, articleIds, adminIds);
         } catch (Throwable failure) {
             int line = java.util.Arrays.stream(failure.getStackTrace())
                     .filter(frame -> frame.getClassName().equals(getClass().getName()))
@@ -111,7 +137,7 @@ class ArticleLifecycleMySqlTest {
         } finally {
             if (jdbc != null) {
                 try {
-                    cleanup(jdbc, articleIds);
+                    cleanup(jdbc, articleIds, adminIds);
                 } catch (RuntimeException ignored) {
                     // 失败路径的兜底清理，清理结果由主流程断言负责
                 }
@@ -132,17 +158,34 @@ class ArticleLifecycleMySqlTest {
         return jdbc.queryForObject("SELECT visits FROM tb_article WHERE id = ?", Integer.class, id);
     }
 
-    private void cleanup(JdbcTemplate jdbc, List<String> articleIds) {
+    private void insertAdministrator(JdbcTemplate jdbc, String userId) {
+        String mobile = "alt" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
+        jdbc.update("INSERT INTO tb_user (id, mobile, nickname) VALUES (?, ?, ?)",
+                userId, mobile, "article-lifecycle-test-admin");
+        jdbc.update("INSERT INTO tb_user_role (user_id, role) VALUES (?, 'ADMIN')", userId);
+    }
+
+    private void cleanup(JdbcTemplate jdbc, List<String> articleIds, List<String> adminIds) {
         for (String articleId : articleIds) {
             jdbc.update("DELETE FROM tb_article WHERE id = ?", articleId);
         }
+        for (String adminId : adminIds) {
+            jdbc.update("DELETE FROM tb_user_role WHERE user_id = ?", adminId);
+            jdbc.update("DELETE FROM tb_user WHERE id = ?", adminId);
+        }
     }
 
-    private void assertNoLeftovers(JdbcTemplate jdbc, List<String> articleIds) {
+    private void assertNoLeftovers(JdbcTemplate jdbc, List<String> articleIds, List<String> adminIds) {
         for (String articleId : articleIds) {
             int remaining = jdbc.queryForObject("SELECT COUNT(*) FROM tb_article WHERE id = ?",
                     Integer.class, articleId);
             assertEquals(0, remaining);
+        }
+        for (String adminId : adminIds) {
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tb_user_role WHERE user_id = ?",
+                    Integer.class, adminId));
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tb_user WHERE id = ?",
+                    Integer.class, adminId));
         }
     }
 

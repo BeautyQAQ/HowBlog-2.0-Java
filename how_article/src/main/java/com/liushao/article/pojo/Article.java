@@ -25,6 +25,8 @@ public class Article implements Serializable {
     public static final String STATE_DRAFT = "0";
     /** 已发布：出现在公开文章列表。 */
     public static final String STATE_PUBLISHED = "1";
+    /** 待审核：作者已提交、等待管理员处理，不出现在公开文章列表。 */
+    public static final String STATE_PENDING = "2";
 
     @Id
     @Column(name = "id")

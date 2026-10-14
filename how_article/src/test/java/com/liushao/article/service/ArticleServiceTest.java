@@ -20,8 +20,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
+import com.liushao.web.ForbiddenException;
 import com.liushao.web.ResourceNotFoundException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,9 +44,17 @@ class ArticleServiceTest {
 
     @Mock private ArticleDao articleDao;
     @Mock private IdWorker idWorker;
+    @Mock private UserRoleDao userRoleDao;
 
     private ArticleService service() {
-        return new ArticleService(articleDao, idWorker);
+        return new ArticleService(articleDao, idWorker, userRoleDao);
+    }
+
+    private Article draft(String userId) {
+        Article article = new Article();
+        article.setUserid(userId);
+        article.setState(Article.STATE_DRAFT);
+        return article;
     }
 
     @Test
@@ -76,9 +86,7 @@ class ArticleServiceTest {
 
     @Test
     void publishSetsPublishedStateAndFirstPublishTime() {
-        Article article = new Article();
-        article.setUserid("author");
-        article.setState(Article.STATE_DRAFT);
+        Article article = draft("author");
         when(articleDao.findById("one")).thenReturn(Optional.of(article));
 
         assertTrue(service().publish("one", "author"));
@@ -90,9 +98,7 @@ class ArticleServiceTest {
 
     @Test
     void publishKeepsExistingPublishTime() {
-        Article article = new Article();
-        article.setUserid("author");
-        article.setState(Article.STATE_DRAFT);
+        Article article = draft("author");
         Date firstPublish = new Date(1_000_000L);
         article.setCreatetime(firstPublish);
         when(articleDao.findById("one")).thenReturn(Optional.of(article));
@@ -104,8 +110,7 @@ class ArticleServiceTest {
 
     @Test
     void publishRejectsNonAuthorAndMissingArticle() {
-        Article article = new Article();
-        article.setUserid("other");
+        Article article = draft("other");
         when(articleDao.findById("one")).thenReturn(Optional.of(article));
         when(articleDao.findById("missing")).thenReturn(Optional.empty());
 
@@ -132,13 +137,87 @@ class ArticleServiceTest {
     }
 
     @Test
-    void findByIdHidesDraftsFromNonAuthors() {
-        Article draft = new Article();
-        draft.setUserid("author");
-        draft.setState(Article.STATE_DRAFT);
+    void submitMovesOwnDraftToPendingReview() {
+        Article article = draft("author");
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+
+        assertEquals(ArticleService.TransitionResult.SUCCESS, service().submit("one", "author"));
+
+        assertEquals(Article.STATE_PENDING, article.getState());
+        verify(articleDao).save(article);
+    }
+
+    @Test
+    void submitRejectsNonAuthorWrongStateAndMissingArticle() {
+        when(articleDao.findById("one")).thenReturn(Optional.of(draft("other")));
+        Article published = draft("author");
+        published.setState(Article.STATE_PUBLISHED);
+        when(articleDao.findById("two")).thenReturn(Optional.of(published));
+        when(articleDao.findById("missing")).thenReturn(Optional.empty());
+
+        assertEquals(ArticleService.TransitionResult.NOT_ALLOWED, service().submit("one", "author"));
+        assertEquals(ArticleService.TransitionResult.INVALID_STATE, service().submit("two", "author"));
+        assertEquals(ArticleService.TransitionResult.NOT_ALLOWED, service().submit("missing", "author"));
+
+        verify(articleDao, never()).save(any());
+    }
+
+    @Test
+    void approveRequiresAdministrator() {
+        when(userRoleDao.countAdministrator("author")).thenReturn(0L);
+
+        assertThrows(ForbiddenException.class, () -> service().approve("one", "author"));
+
+        verify(articleDao, never()).findById(any());
+    }
+
+    @Test
+    void approvePublishesPendingArticleAndStampsPublishTime() {
+        Article article = draft("author");
+        article.setState(Article.STATE_PENDING);
+        when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+
+        assertEquals(ArticleService.TransitionResult.SUCCESS, service().approve("one", "admin"));
+
+        assertEquals(Article.STATE_PUBLISHED, article.getState());
+        assertNotNull(article.getCreatetime());
+        verify(articleDao).save(article);
+    }
+
+    @Test
+    void rejectReturnsPendingArticleToDraft() {
+        Article article = draft("author");
+        article.setState(Article.STATE_PENDING);
+        when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+
+        assertEquals(ArticleService.TransitionResult.SUCCESS, service().reject("one", "admin"));
+
+        assertEquals(Article.STATE_DRAFT, article.getState());
+        verify(articleDao).save(article);
+    }
+
+    @Test
+    void reviewRejectsWrongStateAndMissingArticle() {
+        when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
+        when(articleDao.findById("one")).thenReturn(Optional.of(draft("author")));
+        when(articleDao.findById("missing")).thenReturn(Optional.empty());
+
+        assertEquals(ArticleService.TransitionResult.INVALID_STATE, service().approve("one", "admin"));
+        assertThrows(ResourceNotFoundException.class, () -> service().reject("missing", "admin"));
+
+        verify(articleDao, never()).save(any());
+    }
+
+    @Test
+    void findByIdHidesDraftsFromNonAuthorsButShowsThemToAdministrators() {
+        Article draft = draft("author");
         when(articleDao.findById("one")).thenReturn(Optional.of(draft));
+        when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
 
         assertSame(draft, service().findById("one", "author"));
+        assertSame(draft, service().findById("one", "admin"));
         assertThrows(ResourceNotFoundException.class, () -> service().findById("one", "other"));
         assertThrows(ResourceNotFoundException.class, () -> service().findById("one", null));
     }
@@ -155,6 +234,23 @@ class ArticleServiceTest {
         SearchCapture capture = runSearch("viewer");
 
         assertSame(capture.ownerClause(), capture.captured());
+    }
+
+    @Test
+    void searchLetsAdministratorsSeeEveryState() {
+        when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
+        Root root = mock(Root.class);
+        CriteriaBuilder builder = mock(CriteriaBuilder.class);
+        Path statePath = mock(Path.class);
+        when(articleDao.findAll(any(Specification.class), any(PageRequest.class))).thenReturn(Page.empty());
+
+        service().search(Map.of(), 1, 10, "admin");
+
+        ArgumentCaptor<Specification<Article>> specification = ArgumentCaptor.forClass(Specification.class);
+        verify(articleDao).findAll(specification.capture(), any(PageRequest.class));
+        specification.getValue().toPredicate(root, mock(CriteriaQuery.class), builder);
+        verify(builder, never()).or(any(Predicate.class), any(Predicate.class));
+        verify(builder, never()).equal(statePath, Article.STATE_PUBLISHED);
     }
 
     private record SearchCapture(Predicate captured, Predicate published, Predicate ownerClause) {

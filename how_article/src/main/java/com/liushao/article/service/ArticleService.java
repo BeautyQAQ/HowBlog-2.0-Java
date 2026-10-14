@@ -1,8 +1,10 @@
 package com.liushao.article.service;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
+import com.liushao.web.ForbiddenException;
 import com.liushao.web.InvalidRequestException;
 import com.liushao.web.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
@@ -21,10 +23,12 @@ public class ArticleService {
 
     private final ArticleDao articleDao;
     private final IdWorker idWorker;
+    private final UserRoleDao userRoleDao;
 
-    public ArticleService(ArticleDao articleDao, IdWorker idWorker) {
+    public ArticleService(ArticleDao articleDao, IdWorker idWorker, UserRoleDao userRoleDao) {
         this.articleDao = articleDao;
         this.idWorker = idWorker;
+        this.userRoleDao = userRoleDao;
     }
 
     public List<Article> findAll() {
@@ -32,12 +36,14 @@ public class ArticleService {
     }
 
     /**
-     * 按 ID 查询文章。草稿仅作者本人可见，其他访问者按资源不存在处理。
+     * 按 ID 查询文章。已发布文章公开可见；草稿与待审核文章仅作者本人或管理员可见，
+     * 其他访问者按资源不存在处理。
      */
     public Article findById(String id, String viewerId) {
         Article article = articleDao.findById(id).orElseThrow(ResourceNotFoundException::new);
-        if (!Article.STATE_PUBLISHED.equals(article.getState())
-                && (viewerId == null || !viewerId.equals(article.getUserid()))) {
+        boolean visible = Article.STATE_PUBLISHED.equals(article.getState())
+                || (viewerId != null && (viewerId.equals(article.getUserid()) || isAdministrator(viewerId)));
+        if (!visible) {
             throw new ResourceNotFoundException();
         }
         return article;
@@ -90,6 +96,57 @@ public class ArticleService {
                 }).orElse(false);
     }
 
+    /**
+     * 提交审核：作者将草稿提交，等待管理员处理。
+     */
+    public TransitionResult submit(String id, String userId) {
+        return articleDao.findById(id)
+                .filter(article -> userId.equals(article.getUserid()))
+                .map(article -> {
+                    if (!Article.STATE_DRAFT.equals(article.getState())) {
+                        return TransitionResult.INVALID_STATE;
+                    }
+                    article.setState(Article.STATE_PENDING);
+                    article.setUpdatetime(new Date());
+                    articleDao.save(article);
+                    return TransitionResult.SUCCESS;
+                }).orElse(TransitionResult.NOT_ALLOWED);
+    }
+
+    /**
+     * 审核通过：管理员将待审核文章置为已发布。
+     */
+    public TransitionResult approve(String id, String userId) {
+        requireAdministrator(userId);
+        return review(id, true);
+    }
+
+    /**
+     * 审核驳回：管理员将待审核文章退回草稿。
+     */
+    public TransitionResult reject(String id, String userId) {
+        requireAdministrator(userId);
+        return review(id, false);
+    }
+
+    private TransitionResult review(String id, boolean approve) {
+        Article article = articleDao.findById(id).orElseThrow(ResourceNotFoundException::new);
+        if (!Article.STATE_PENDING.equals(article.getState())) {
+            return TransitionResult.INVALID_STATE;
+        }
+        if (approve) {
+            if (article.getCreatetime() == null) {
+                article.setCreatetime(new Date());
+            }
+            article.setState(Article.STATE_PUBLISHED);
+        } else {
+            article.setState(Article.STATE_DRAFT);
+        }
+        article.setUpdatetime(new Date());
+        articleDao.save(article);
+        return TransitionResult.SUCCESS;
+    }
+
     public boolean update(Article article, String userId) {
         return articleDao.findById(article.getId())
                 .filter(existing -> userId.equals(existing.getUserid()))
@@ -122,6 +179,7 @@ public class ArticleService {
         if (conditions == null || page < 1 || size < 1 || size > 100) {
             throw new InvalidRequestException();
         }
+        boolean administrator = isAdministrator(viewerId);
         Specification<Article> specification = (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
             for (Map.Entry<String, Object> entry : conditions.entrySet()) {
@@ -129,11 +187,13 @@ public class ArticleService {
                     predicates.add(builder.equal(root.get(entry.getKey()), entry.getValue()));
                 }
             }
-            Predicate published = builder.equal(root.get("state"), Article.STATE_PUBLISHED);
-            if (viewerId == null) {
-                predicates.add(published);
-            } else {
-                predicates.add(builder.or(published, builder.equal(root.get("userid"), viewerId)));
+            if (!administrator) {
+                Predicate published = builder.equal(root.get("state"), Article.STATE_PUBLISHED);
+                if (viewerId == null) {
+                    predicates.add(published);
+                } else {
+                    predicates.add(builder.or(published, builder.equal(root.get("userid"), viewerId)));
+                }
             }
             return builder.and(predicates.toArray(new Predicate[0]));
         };
@@ -146,5 +206,21 @@ public class ArticleService {
                     "ispublic", "istop", "visits", "thumbup", "comment", "state", "channelid", "url", "type" -> true;
             default -> false;
         };
+    }
+
+    private void requireAdministrator(String userId) {
+        if (!isAdministrator(userId)) {
+            throw new ForbiddenException();
+        }
+    }
+
+    private boolean isAdministrator(String userId) {
+        return userId != null && userRoleDao.countAdministrator(userId) > 0;
+    }
+
+    public enum TransitionResult {
+        SUCCESS,
+        NOT_ALLOWED,
+        INVALID_STATE
     }
 }
