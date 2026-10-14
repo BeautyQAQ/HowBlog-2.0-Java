@@ -4,7 +4,7 @@
 
 - 更新时间：2026-10-14
 - 当前阶段：Phase 4 第二切片完成——新增本人资料读取与部分更新接口（`GET/PUT /user/profile`，脱敏视图、部分更新、非法字段忽略），契约 revision `13`，真实 MySQL 验收通过；注册切片已推送（`1c03b70`）；会话清理默认关闭
-- 当前接口契约：revision `13`、contract version `6.4.0`（兼容性新增）；本轮改动待提交推送
+- 当前接口契约：revision `13`、contract version `6.4.0`（兼容性新增）；已提交并推送 `master`（`e6a2447`）
 - 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册与资料两个切片，均通过全量 `mvn test` 181 项（6 项外部测试跳过）与 gated 真实 MySQL 验收
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
@@ -117,7 +117,7 @@
 | Phase 3 第一切片（配置环境化） | 2026-10-13 | 2026-10-13 | JDK 21 全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；`HOW_ARTICLE_TEST_CONFIG` 指向包装后的 `application.yml` 复跑 gated 点赞真实存储测试 1 项通过；新增跨域单元/MVC/真实 WebSocket 跨源测试 | 端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 环境变量覆盖（默认值不变，凭证按用户决定保留）；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与三服务 `WebMvcConfigurer`；契约 revision 10 / `6.1.0`，前端无需改代码。未提交 |
 | Phase 3 第二切片（容器化与可观测性） | 2026-10-13 | 2026-10-14 | JDK 21 全量 `mvn test` 159 项、0 失败、0 错误、4 跳过；`bash scripts/check-api-docs.sh` 输出“接口文档一致：revision 11 / API-20261013-011 / contract 6.2.0”；`bash scripts/check-secrets.sh` 通过 | 新增请求关联 ID 过滤器（4 项测试，含伪造换行请求头不回显）、三服务 CORS 暴露 `X-Request-Id`、`/actuator/health`、共用 Dockerfile、`docker-compose.yml`、CI；契约 revision 11 / `6.2.0`。容器镜像构建与真实启动由 NAS 上 `howblog-dev` 栈验证（compose/Dockerfile 与推送提交逐字节一致、五容器 healthy、三健康端点 UP、真实 GET 返回 20000、`X-Request-Id` 生效）；已提交并推送 `bb098e3`。本会话对 NAS 的远程写（重建、`docker exec`）被权限拦截，未执行 |
 | Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL；已提交并推送 `1c03b70` |
-| Phase 4 第二切片（资料读取与更新） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 181 项、0 失败、0 错误、6 跳过；gated `UserProfileMySqlTest` 真实 MySQL 1 项通过（2.5 秒）；DBX 复核 `profile-test` 残留 0 | 新增 `GET/PUT /user/profile`、`ProfileResponse`/`ProfileUpdateRequest`、部分更新与非法字段忽略；契约 revision 13 / `6.4.0`。H2 MVC 认证测试需 `UTC_TIMESTAMP` 别名且目标类必须为 public；未做浏览器/前端联调，未执行 DDL |
+| Phase 4 第二切片（资料读取与更新） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 181 项、0 失败、0 错误、6 跳过；gated `UserProfileMySqlTest` 真实 MySQL 1 项通过（2.5 秒）；DBX 复核 `profile-test` 残留 0 | 新增 `GET/PUT /user/profile`、`ProfileResponse`/`ProfileUpdateRequest`、部分更新与非法字段忽略；契约 revision 13 / `6.4.0`。H2 MVC 认证测试需 `UTC_TIMESTAMP` 别名且目标类必须为 public；未做浏览器/前端联调，未执行 DDL；已提交并推送 `e6a2447` |
 
 ## 6. 变更记录
 
@@ -196,11 +196,12 @@
 - 启动 Phase 4 第一切片：新增公开注册接口 `POST /user/register`（手机号 11 位以 1 开头、密码 8–64、昵称可选并去除首尾空白）、服务端 BCrypt 即时哈希与雪花 ID、注册时间及计数初始化、手机号查重（含历史重复数据拒绝）；新增 `REGISTER_IP` 限流维度（默认每 60 秒 10 次），拦截器在业务前执行。
 - 测试：`UserServiceTest` 3 项、`UserControllerTest` 8 项（成功/重复/5 组非法参数/限流先于业务）、gated `UserRegisterMySqlTest` 真实 MySQL 验收通过；全量 `mvn test` 171 项、0 失败、0 错误、5 跳过。首次 gated 运行因 surefire 以模块目录为工作目录、相对路径解析失败，改用绝对路径后通过（未改测试代码）。DBX 复核测试环境 `register-test` 残留为 0。
 - 契约同步 revision `12` / `6.3.0`（兼容性新增）：三件套、`docs/admin-operations.md`（注册限流变量与部署边界）与 README 接口表已更新。
-- 本切片已提交并推送 `master` 为 `1c03b70`；前端同步指针仍为 revision `9`，revision 10–12 尚未被前端消费。
+- 本切片已提交并推送 `master` 为 `1c03b70`；前端同步指针仍为 revision `9`，revision 10 起尚未被前端消费。
 - 启动 Phase 4 第二切片：新增 `GET /user/profile`（脱敏资料视图，不含密码）与 `PUT /user/profile`（部分更新 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`；未提供字段保留原值，字符串去首尾空白且不能为纯空白，邮箱格式校验，`id`/`mobile`/`password`/计数等不可修改字段忽略；`updatedate` 服务端维护）。接口需认证，不参与认证限流。
 - 测试：`UserProfileTest` 6 项（H2 MVC 全链路：认证、脱敏读取、部分更新、忽略不可修改字段、5 组非法输入、空更新）、`UserServiceTest` 3 项、gated `UserProfileMySqlTest` 真实 MySQL 验收通过（注册临时用户→读取→部分更新→按主键删除；DBX 复核 `profile-test` 残留 0）；全量 `mvn test` 181 项、0 失败、0 错误、6 跳过。
 - 调试记录：H2 MVC 认证测试必须在 fixture 中创建 `UTC_TIMESTAMP` 别名（SessionVerifier 使用 `UTC_TIMESTAMP(6)`），且别名目标方法所在测试类必须是 public——包级私有类会让 H2 反射调用失败，表现为所有认证请求 500（`UncategorizedSQLException`）；缺少别名则表现为 `BadSqlGrammarException`。两次失败后定位并修复，未改生产代码。
 - 契约同步 revision `13` / `6.4.0`（兼容性新增）：三件套与 README 接口表已更新。
+- 资料切片已提交并推送 `master` 为 `e6a2447`；revision 10–13 均待前端消费（前端指针仍为 revision `9`）。
 
 后续每次开发完成一个任务后，必须同步更新：
 
