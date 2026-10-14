@@ -238,4 +238,4 @@
 - 前端动作：可接入点赞按钮：调用 `PUT /article/thumbup/{articleId}`，成功（20000）后本地 `thumbup` 加 1；`20004` 表示已点赞过，按钮应置为已点赞态且不要重复计数；`404` 按文章不可见处理。保存 revision `19`。
 - 部署动作：部署前对目标库执行 [mysql-article-thumbup-migration.sql](mysql-article-thumbup-migration.sql)（可重复执行）；新库由初始化脚本直接建表。历史 `tb_article.thumbup` 计数保留、不重算、不补关系。
 - 验证：新增 `ArticleServiceTest` 4 项（首次计数、重复拒绝、缺失/非已发布拒绝、计数失败回滚关系）、`ArticleControllerTest` 2 项（未认证入口参数化 + 首次成功/重复 20004/缺失 404 用例）；gated `ArticleThumbupMySqlTest` 在测试环境真实 MySQL 上通过（首次/重复、同用户 20 路并发恰好 1 成功 19 重复、10 用户并发全成功、文章不存在与非已发布拒绝；临时数据按主键清理，DBX 复核既有 3 篇文章 `thumbup` 88/45/32 与 `visits` 不变、`tb_article_thumbup` 0 行、残留 0）；DDL 已获用户授权并在测试环境执行（`CREATE TABLE IF NOT EXISTS tb_article_thumbup`）；全量 `mvn test` 239 项、0 失败、0 错误、9 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
-- 发布状态：已随后端提交推送至 `origin/master`（提交号见台账）。
+- 发布状态：已随后端提交 `5a2f154` 推送至 `origin/master`。
