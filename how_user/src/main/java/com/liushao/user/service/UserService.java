@@ -4,7 +4,9 @@ import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.pojo.User;
+import com.liushao.util.IdWorker;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +14,7 @@ import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Date;
 import java.util.List;
 
 @Service
@@ -20,13 +23,15 @@ public class UserService {
     private final JwtTokenService jwtTokenService;
     private final UserDao userDao;
     private final AuthSessionService sessions;
+    private final IdWorker idWorker;
 
-        public UserService(UserDao userDao, PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
-            AuthSessionService sessions) {
+    public UserService(UserDao userDao, PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
+            AuthSessionService sessions, IdWorker idWorker) {
         this.userDao = userDao;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.sessions = sessions;
+        this.idWorker = idWorker;
     }
 
     @Transactional(timeout = 15)
@@ -53,6 +58,41 @@ public class UserService {
         }
 
         return response(user, sessions.create(user.getId()));
+    }
+
+    @Transactional(timeout = 15)
+    public RegisterResult register(RegisterRequest request) {
+        // 服务层校验与 RegisterRequest 注解保持同一规则，防止绕过控制器直接调用时写入非法数据
+        if (request == null
+                || !StringUtils.hasText(request.getMobile())
+                || !request.getMobile().matches("1\\d{10}")
+                || !StringUtils.hasText(request.getPassword())
+                || request.getPassword().length() < 8
+                || request.getPassword().length() > 64) {
+            return RegisterResult.INVALID;
+        }
+
+        List<User> existing = userDao.findAllByMobile(request.getMobile());
+        if (existing != null && !existing.isEmpty()) {
+            return RegisterResult.DUPLICATE;
+        }
+
+        User user = new User();
+        user.setId(String.valueOf(idWorker.nextId()));
+        user.setMobile(request.getMobile());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        String nickname = request.getNickname() == null ? null : request.getNickname().strip();
+        user.setNickname(nickname == null || nickname.isEmpty() ? null : nickname);
+        user.setRegdate(new Date());
+        user.setOnline(0L);
+        user.setFanscount(0);
+        user.setFollowcount(0);
+        userDao.save(user);
+        return RegisterResult.SUCCESS;
+    }
+
+    public enum RegisterResult {
+        SUCCESS, INVALID, DUPLICATE
     }
 
     @Transactional(timeout = 15)

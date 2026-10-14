@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -22,8 +23,14 @@ import com.liushao.user.service.AuthRateLimiter;
 import com.liushao.user.service.AuthRateLimiter.Scope;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,13 +44,14 @@ class UserControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private PasswordEncoder passwordEncoder;
     @MockBean private UserDao userDao;
+    @MockBean private com.liushao.util.IdWorker idWorker;
     @MockBean private com.liushao.user.dao.AuthSessionDao sessions;
     @MockBean private com.liushao.user.dao.AuthRefreshTokenDao refreshTokens;
     @MockBean private com.liushao.auth.SessionVerifier verifier;
     @MockBean private AuthRateLimiter rateLimiter;
 
     @ParameterizedTest
-    @ValueSource(strings = {"login", "refresh", "logout"})
+    @ValueSource(strings = {"login", "register", "refresh", "logout"})
     void rateLimitRunsBeforeAuthenticationParsingAndBusiness(String action) throws Exception {
         Scope scope = Scope.valueOf(action.toUpperCase(java.util.Locale.ROOT) + "_IP");
         doThrow(new AuthRateLimiter.Rejected(7)).when(rateLimiter).check(scope, "127.0.0.1");
@@ -125,5 +133,49 @@ class UserControllerTest {
                         .content("{\"mobile\":\"test-user\",\"password\":\"test-password\"}"))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value(20001))
                 .andExpect(jsonPath("$.message").value("服务暂时不可用，请稍后重试"));
+    }
+
+    @Test
+    void registerCreatesUserWithBcryptPassword() throws Exception {
+        when(idWorker.nextId()).thenReturn(20261014001L);
+        when(userDao.findAllByMobile("13900000000")).thenReturn(List.of());
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"13900000000\",\"password\":\"password-123\",\"nickname\":\"Bob\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true))
+                .andExpect(jsonPath("$.code").value(20000)).andExpect(jsonPath("$.message").value("注册成功"))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(saved.capture());
+        assertEquals("20261014001", saved.getValue().getId());
+        assertTrue(saved.getValue().getPassword().startsWith("$2"));
+        assertFalse(saved.getValue().getPassword().contains("password-123"));
+    }
+
+    @Test
+    void registerRejectsDuplicateMobile() throws Exception {
+        User existing = new User();
+        existing.setId("10001");
+        existing.setMobile("13900000000");
+        when(userDao.findAllByMobile("13900000000")).thenReturn(List.of(existing));
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"13900000000\",\"password\":\"password-123\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.code").value(20005)).andExpect(jsonPath("$.message").value("手机号已注册"));
+        verify(userDao, never()).save(any(User.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{}",
+            "{\"mobile\":\"12345\",\"password\":\"password-123\"}",
+            "{\"mobile\":\"13900000000\",\"password\":\"short\"}",
+            "{\"mobile\":\"13900000000\",\"password\":\"        \"}",
+            "{\"mobile\":\"13900000000\"}"
+    })
+    void registerRejectsInvalidBodyWithBadRequest(String body) throws Exception {
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001))
+                .andExpect(jsonPath("$.message").value("请求格式或参数不正确"));
+        verifyNoInteractions(userDao);
     }
 }

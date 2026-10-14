@@ -5,10 +5,12 @@ import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.pojo.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -19,6 +21,7 @@ import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.never;
@@ -35,6 +38,9 @@ class UserServiceTest {
     @Mock
     private UserDao userDao;
 
+    @Mock
+    private com.liushao.util.IdWorker idWorker;
+
     private PasswordEncoder passwordEncoder;
     private UserService userService;
 
@@ -48,7 +54,7 @@ class UserServiceTest {
         AuthSessionService sessions = new AuthSessionService(
             org.mockito.Mockito.mock(com.liushao.user.dao.AuthSessionDao.class),
             org.mockito.Mockito.mock(com.liushao.user.dao.AuthRefreshTokenDao.class), userDao);
-        userService = new UserService(userDao, passwordEncoder, jwtTokenService, sessions);
+        userService = new UserService(userDao, passwordEncoder, jwtTokenService, sessions, idWorker);
     }
 
     @Test
@@ -93,6 +99,63 @@ class UserServiceTest {
 
         assertNull(userService.login(loginRequest(PASSWORD)));
         verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+    }
+
+    @Test
+    void registerStoresBcryptPasswordAndGeneratedId() {
+        when(idWorker.nextId()).thenReturn(42L);
+        when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of());
+
+        assertEquals(UserService.RegisterResult.SUCCESS, userService.register(registerRequest(MOBILE, PASSWORD, "  Alice  ")));
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(saved.capture());
+        User user = saved.getValue();
+        assertEquals("42", user.getId());
+        assertEquals(MOBILE, user.getMobile());
+        assertEquals("Alice", user.getNickname());
+        assertTrue(user.getPassword().startsWith("$2"));
+        assertTrue(passwordEncoder.matches(PASSWORD, user.getPassword()));
+        assertNotNull(user.getRegdate());
+        assertEquals(0, user.getFanscount());
+        assertEquals(0, user.getFollowcount());
+        assertEquals(0L, user.getOnline());
+    }
+
+    @Test
+    void registerRejectsExistingMobileIncludingLegacyDuplicates() {
+        when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(userWithPassword(PASSWORD)));
+        assertEquals(UserService.RegisterResult.DUPLICATE,
+                userService.register(registerRequest(MOBILE, PASSWORD, null)));
+
+        when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(
+                userWithPassword(PASSWORD),
+                userWithPassword(PASSWORD)
+        ));
+        assertEquals(UserService.RegisterResult.DUPLICATE,
+                userService.register(registerRequest(MOBILE, PASSWORD, null)));
+        verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+    }
+
+    @Test
+    void registerRejectsInvalidInputWithoutWriting() {
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(null));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest("", PASSWORD, null)));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest("12345", PASSWORD, null)));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest("213800000000", PASSWORD, null)));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "short", null)));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "x".repeat(65), null)));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "        ", null)));
+        verify(userDao, never()).findAllByMobile(org.mockito.ArgumentMatchers.anyString());
+        verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+    }
+
+    private RegisterRequest registerRequest(String mobile, String password, String nickname) {
+        RegisterRequest request = new RegisterRequest();
+        request.setMobile(mobile);
+        request.setPassword(password);
+        request.setNickname(nickname);
+        return request;
     }
 
     private LoginRequest loginRequest(String password) {

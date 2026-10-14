@@ -85,7 +85,7 @@ public class AuthRateLimiter {
 
     public enum Scope {
         LOGIN_IP("login-ip", 20), LOGIN_ACCOUNT("login-account", 10),
-        REFRESH_IP("refresh-ip", 60), LOGOUT_IP("logout-ip", 30);
+        REFRESH_IP("refresh-ip", 60), LOGOUT_IP("logout-ip", 30), REGISTER_IP("register-ip", 10);
 
         private final String property;
         private final int defaultLimit;

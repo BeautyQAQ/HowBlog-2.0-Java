@@ -41,6 +41,7 @@
 | `HOW_AUTH_RATE_LIMIT_WINDOW_SECONDS` | 60 | 1..3600，首次请求起固定窗口 |
 | `HOW_AUTH_RATE_LIMIT_LOGIN_IP_LIMIT` | 20 | 每来源登录额度 |
 | `HOW_AUTH_RATE_LIMIT_LOGIN_ACCOUNT_LIMIT` | 10 | 每账号登录额度，跨来源共享 |
+| `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT` | 10 | 每来源注册额度 |
 | `HOW_AUTH_RATE_LIMIT_REFRESH_IP_LIMIT` | 60 | 每来源刷新额度 |
 | `HOW_AUTH_RATE_LIMIT_LOGOUT_IP_LIMIT` | 30 | 每来源退出额度，与登录/刷新独立 |
 
@@ -48,8 +49,14 @@
 - 键仅包含维度和 HMAC-SHA256 摘要，密钥复用 JWT secret，账号作 NFKC、首尾空白及小写规范化；不把原始手机号、IP、密码或 token 写入 Redis 键/值及应用日志。所有用户实例必须使用相同的 secret、Redis、命名空间、阈值及窗口；改 secret/前缀、清空/淘汰 Redis 键会重置额度，配置变更需协调发布。
 - 权限至少需要脚本执行/缓存及 GET、INCR、PTTL、PEXPIRE。容量需按窗口内不同来源/账号数评估，建议使用隔离的限流 Redis 和 noeviction，监控内存、拒绝数、503 及延迟；内存耗尽会关闭认证入口，不应自动绕过限流。
 - 应用使用 `request.getRemoteAddr()`，不直接采信转发头。默认不启用转发头解析；需要真实代理来源时，先在可信入口覆盖外部头、限制直连来源，再配置和验证容器代理处理。否则反向代理/NAT 下会共享来源额度。
-- 只保护三个认证 POST 入口，不限制 OPTIONS、WebSocket 或其他 REST。仍需网关请求体大小、全局/连接限流和告警；被盗凭据分布式滥用、不受控代理链及大规模拒绝服务不能靠本功能解决。
+- 只保护四个认证 POST 入口（登录、注册、刷新、退出），不限制 OPTIONS、WebSocket 或其他 REST。仍需网关请求体大小、全局/连接限流和告警；被盗凭据分布式滥用、不受控代理链及大规模拒绝服务不能靠本功能解决。
 - 验收 429 的 Retry-After/CORS/no-store、账号跨 IP 共享、独立退出额度、Redis 断连后的 503，以及恢复后的请求。不要把 429/503 当作服务端退出成功。
+
+## 用户注册部署
+
+- `POST /user/register` 为公开接口，成功即写入用户表（雪花 ID、BCrypt 密码、注册时间，在线/粉丝/关注计数初始化为 0），不自动登录；注册额度由 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`（默认 10）控制，429/503 与登录一致。
+- 用户表没有手机号唯一索引：去重按应用层查询判断，极高并发下可能产生重复记录；如需唯一约束，先核对历史重复数据并单独评审、授权 DDL，本仓库不自动执行迁移。
+- 注册验收使用 gated `UserRegisterMySqlTest`（`HOW_AUTH_SERVICE_TEST_CONFIG` 指向用户服务配置，需绝对路径）：临时用户按主键清理；2026-10-14 在测试环境真实 MySQL 通过。未做浏览器/前端联调。
 
 ## 过期会话清理部署
 

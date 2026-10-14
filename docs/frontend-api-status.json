@@ -1,16 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.2.0",
-  "revision": 11,
-  "updatedAt": "2026-10-13",
-  "latestChangeId": "API-20261013-011",
-  "latestChangeType": "observability",
+  "contractVersion": "6.3.0",
+  "revision": 12,
+  "updatedAt": "2026-10-14",
+  "latestChangeId": "API-20261014-012",
+  "latestChangeType": "feature",
   "breaking": false,
   "requiresFrontendAction": false,
   "changedAreas": [
-    "http-request-correlation-id",
-    "service-health-endpoint",
-    "container-deployment"
+    "user-registration",
+    "auth-rate-limit-register-ip"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

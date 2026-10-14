@@ -3,9 +3,9 @@
 ## 1. 当前状态
 
 - 更新时间：2026-10-14
-- 当前阶段：Phase 3 第二切片完成并在 NAS 主机 Docker 上验证（`bb098e3`）：请求关联 ID、`/actuator/health`、共用 Dockerfile 与 `docker-compose.yml`、CI 与敏感信息扫描，契约 revision `11`；NAS 上 `howblog-dev` 栈由与推送提交完全一致的编排文件构建，五容器健康、三健康端点 UP、真实查询返回 20000；剩余增强项为 JSON 结构化日志与指标导出；会话清理默认关闭
-- 当前接口契约：revision `11`、contract version `6.2.0`（兼容性新增，前端无需改代码）；已提交并推送 `master`（`bb098e3`）
-- 总体判断：Phase 1、Phase 2 已完成并有真实存储与全量测试依据；Phase 3 第一、二切片均已推送（`992c05c`、`bb098e3`），第二切片通过全量 `mvn test` 159 项（4 项外部测试跳过）、接口文档一致性、敏感信息扫描，并在 NAS Docker 上完成真实启动与只读验收
+- 当前阶段：Phase 4 第一切片完成——新增公开注册接口 `POST /user/register`（BCrypt 即时哈希、手机号查重、注册来源 IP 限流），契约 revision `12`，真实 MySQL 验收通过；Phase 3 两切片已推送并在 NAS Docker 上验证；会话清理默认关闭
+- 当前接口契约：revision `12`、contract version `6.3.0`（兼容性新增）；本轮改动待提交推送
+- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 开始推进，注册切片通过全量 `mvn test` 171 项（5 项外部测试跳过）与 gated 真实 MySQL 注册验收
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -33,8 +33,8 @@
 | Phase 0 基线整理 | 已完成 | 100% | 构建、模块、契约和已知限制已记录 |
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
 | Phase 2 测试与数据一致性 | 已完成 | 100% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移、全量 145 项测试及受控本地真实存储集成测试（测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境再评估，真实 Redis/MySQL 宕机演练未执行（预期行为由单元测试与运维说明覆盖） |
-| Phase 3 配置、部署与可观测性 | 进行中 | 90% | 第一切片已推送（`992c05c`）：端口、跨域来源、MySQL/Redis 连接环境变量化；第二切片已推送（`bb098e3`）并在 NAS Docker 上验证：请求关联 ID 与日志 `requestId`、`/actuator/health`、共用 Dockerfile 与 `docker-compose.yml`（五容器健康、真实查询 20000）、CI 与敏感信息扫描，契约 revision 11；剩余增强项：JSON 结构化日志与指标导出（需可重建容器时验证） |
-| Phase 4 博客核心产品能力 | 未开始 | 0% | 等安全和测试底座稳定后推进 |
+| Phase 3 配置、部署与可观测性 | 已完成 | 100% | 两切片均推送并在 NAS Docker 上验证（`992c05c`、`bb098e3`）：环境变量化、请求关联 ID、`/actuator/health`、容器编排与 CI；结构化日志以 `requestId` 格式落地，JSON 输出与指标导出记为顺延增强项（需可重建容器时验证） |
+| Phase 4 博客核心产品能力 | 进行中 | 10% | 第一切片完成：公开注册接口（BCrypt、查重、注册限流、契约 revision 12、真实 MySQL 验收）；后续：资料维护、头像与账号基础能力 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
 
 ## 4. 迭代记录：Phase 1 身份认证与安全边界
@@ -79,6 +79,8 @@
 - [x] 容器化验证完成（2026-10-14，NAS Docker 28.5.2 / Compose v2.40.3）：`/tmp/howblog-dev` 栈的 compose 与 Dockerfile 与推送提交 `bb098e3` 逐字节一致，镜像构建于 2026-10-13 21:36，五个容器全部 healthy，9001/9004/9008 健康端点 UP，`GET /article`、`GET /label` 返回 20000，响应带 `X-Request-Id`。本机 Docker daemon 仍不可用。
 - [!] 本会话对 NAS 的远程写操作（`nohup docker compose up` 重建、`docker exec mysql`、POST 登录探针）被权限分类器拒绝（Remote Shell Writes）；只读检查与简单 GET 通过。后续在 NAS 上重建、重启或写入需用户授权或由用户自行执行。
 - [ ] 结构化日志目前只落地请求关联 ID 与日志格式；JSON 结构化输出、指标导出和链路追踪尚未实现。
+- [x] 注册接口已实现并验收：BCrypt 即时哈希、手机号查重（含历史重复数据拒绝）、注册 IP 限流、契约 revision `12`；gated 真实 MySQL 测试创建临时用户后按主键删除，`nas-mysql` 复核 `register-test` 残留为 0。
+- [ ] 用户表无手机号唯一索引，注册去重为应用层查询，极高并发下可能产生重复记录；数据库级唯一约束需先核对历史重复数据并单独授权 DDL。注册尚无邮箱/短信验证与密码找回，也没有资料修改接口。
 
 ## 5. 任务验收记录
 
@@ -112,6 +114,7 @@
 | Phase 2 真实存储验收运行 | 2026-10-12 | 2026-10-12 | `HOW_ARTICLE_TEST_CONFIG` 指向文章服务既有 application.yml（不新建含凭证文件、命令行不出现凭证）；`mvn -pl how_article -am test -Dtest=CommentThumbupMySqlRedisTest -Dsurefire.failIfNoSpecifiedTests=false`；DBX 运行前后只读对照 | 1 项通过、0 失败（4.3 秒），6 组场景在真实 MySQL + Redis 上全部通过。运行前后 `nas-mysql` how-blog-smaill：评论 3、关系 0、计数总和 29、`thumbup-test-` 残留 0；`nas-redis` db3 DBSIZE 20 → 20。用户明确授权使用该测试环境库；未执行 DDL，既有数据未改动 |
 | Phase 3 第一切片（配置环境化） | 2026-10-13 | 2026-10-13 | JDK 21 全量 `mvn test` 155 项、0 失败、0 错误、4 跳过；`HOW_ARTICLE_TEST_CONFIG` 指向包装后的 `application.yml` 复跑 gated 点赞真实存储测试 1 项通过；新增跨域单元/MVC/真实 WebSocket 跨源测试 | 端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 环境变量覆盖（默认值不变，凭证按用户决定保留）；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与三服务 `WebMvcConfigurer`；契约 revision 10 / `6.1.0`，前端无需改代码。未提交 |
 | Phase 3 第二切片（容器化与可观测性） | 2026-10-13 | 2026-10-14 | JDK 21 全量 `mvn test` 159 项、0 失败、0 错误、4 跳过；`bash scripts/check-api-docs.sh` 输出“接口文档一致：revision 11 / API-20261013-011 / contract 6.2.0”；`bash scripts/check-secrets.sh` 通过 | 新增请求关联 ID 过滤器（4 项测试，含伪造换行请求头不回显）、三服务 CORS 暴露 `X-Request-Id`、`/actuator/health`、共用 Dockerfile、`docker-compose.yml`、CI；契约 revision 11 / `6.2.0`。容器镜像构建与真实启动由 NAS 上 `howblog-dev` 栈验证（compose/Dockerfile 与推送提交逐字节一致、五容器 healthy、三健康端点 UP、真实 GET 返回 20000、`X-Request-Id` 生效）；已提交并推送 `bb098e3`。本会话对 NAS 的远程写（重建、`docker exec`）被权限拦截，未执行 |
+| Phase 4 第一切片（用户注册） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 171 项、0 失败、0 错误、5 跳过；`HOW_AUTH_SERVICE_TEST_CONFIG` 以绝对路径指向 `how_user/src/main/resources/application.yml` 运行 `UserRegisterMySqlTest` 1 项通过（3.2 秒）；DBX 复核 `register-test` 残留 0 | 新增 `POST /user/register`、`RegisterRequest` 校验、`REGISTER_IP` 限流维度与 `HOW_AUTH_RATE_LIMIT_REGISTER_IP_LIMIT`；契约 revision 12 / `6.3.0`。首次 gated 运行因 surefire 工作目录导致相对路径失败，改绝对路径后通过，测试代码未改；未做浏览器/前端联调，未执行 DDL |
 
 ## 6. 变更记录
 
@@ -186,6 +189,10 @@
 - 台账与契约的补充提交为 `da74997`。前端仓库 `/home/ubuntu/project/HowBlog-2.0-vueblog-vue` 的 `backend-api-sync.json` 仍为 revision `9` / contract `6.0.1`（后端 `8f37bbd`），revision 10 与 11 尚未被前端消费；按此前约定只记录状态，不覆盖前端文件。
 - NAS 验证（本会话）：通过 `SSH_ASKPASS_REQUIRE=force` 加本地 askpass 脚本建立对 NAS（`192.168.20.5`）的免交互 SSH（此前无 `sshpass`、无密钥的阻塞解除）。NAS 上已有 `/tmp/howblog-dev` 栈，由用户于 2026-10-13 21:35 从当时工作区部署、21:36 完成镜像构建；其 compose 与 Dockerfile 与推送提交 `bb098e3` 逐字节一致。只读验收：五个容器全部 healthy，9001/9004/9008 `/actuator/health` 均 UP，`GET /article`、`GET /label` 返回 20000（空数据，隔离库），响应含 `X-Request-Id`。未触碰该栈的容器与数据。
 - 权限约束：本会话对 NAS 的远程写操作（`nohup docker compose up` 重建、`docker exec mysql`、POST 登录探针）被权限分类器拒绝（Remote Shell Writes）；上传快照与隔离 `.env` 等准备工作已完成但未执行重建。后续重建验证需用户授权或由用户执行。本地临时 `/tmp/how-askpass.sh` 与 `/tmp/howblog-src.tar.gz` 在本会话结束前删除。
+- NAS 临时文件已清理（`~/howblog-verify`、`/tmp/howblog-src.tar.gz` 已删除，`/tmp/howblog-dev` 栈未触碰），本地 askpass 脚本与快照包同步删除。
+- 启动 Phase 4 第一切片：新增公开注册接口 `POST /user/register`（手机号 11 位以 1 开头、密码 8–64、昵称可选并去除首尾空白）、服务端 BCrypt 即时哈希与雪花 ID、注册时间及计数初始化、手机号查重（含历史重复数据拒绝）；新增 `REGISTER_IP` 限流维度（默认每 60 秒 10 次），拦截器在业务前执行。
+- 测试：`UserServiceTest` 3 项、`UserControllerTest` 8 项（成功/重复/5 组非法参数/限流先于业务）、gated `UserRegisterMySqlTest` 真实 MySQL 验收通过；全量 `mvn test` 171 项、0 失败、0 错误、5 跳过。首次 gated 运行因 surefire 以模块目录为工作目录、相对路径解析失败，改用绝对路径后通过（未改测试代码）。DBX 复核测试环境 `register-test` 残留为 0。
+- 契约同步 revision `12` / `6.3.0`（兼容性新增）：三件套、`docs/admin-operations.md`（注册限流变量与部署边界）与 README 接口表已更新。
 
 后续每次开发完成一个任务后，必须同步更新：
 
@@ -198,7 +205,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. Phase 3 主体已完成并在 NAS 上验证；下一步进入 Phase 4 第一切片（用户注册）：先定义数据模型、权限规则、接口契约与验收测试，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项，需在可重建容器的前提下验证。NAS 上的 `/tmp/howblog-dev` 栈（占用 9001/9004/9008）正在运行，不要停止或覆盖；对 NAS 的远程写操作需先获得用户授权。
+1. Phase 4 第一切片（注册）已完成；下一片建议：用户资料维护与账号基础能力（查看/修改昵称、头像、个性签名），先定义数据模型、权限规则、接口契约与验收测试，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项，需在可重建容器的前提下验证。NAS 上的 `/tmp/howblog-dev` 栈（占用 9001/9004/9008）正在运行，不要停止或覆盖；对 NAS 的远程写操作需先获得用户授权。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。

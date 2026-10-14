@@ -142,7 +142,10 @@ mvn -pl how_user spring-boot:run
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| `POST` | `/user/register` | 用户注册，成功不自动登录 |
 | `POST` | `/user/login` | 用户登录，成功返回 Bearer JWT |
+| `POST` | `/user/refresh` | 刷新访问与刷新凭据 |
+| `POST` | `/user/logout` | 退出当前会话 |
 
 ### 基础服务 `http://localhost:9001`
 

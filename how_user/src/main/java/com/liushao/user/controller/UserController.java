@@ -4,6 +4,7 @@ import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.service.UserService;
 import com.liushao.user.service.AuthRateLimiter;
 import com.liushao.user.pojo.RefreshRequest;
@@ -38,6 +39,17 @@ public class UserController {
         }
 
         return new Result(false, StatusCode.LOGINERROR, "手机号或密码错误");
+    }
+
+    @PostMapping("register")
+    public ResponseEntity<Result> register(@Valid @RequestBody RegisterRequest request) {
+        UserService.RegisterResult result = userService.register(request);
+        return switch (result) {
+            case SUCCESS -> ResponseEntity.ok(new Result(true, StatusCode.OK, "注册成功"));
+            case DUPLICATE -> ResponseEntity.ok(new Result(false, StatusCode.REPERROR, "手机号已注册"));
+            case INVALID -> ResponseEntity.badRequest()
+                    .body(new Result(false, StatusCode.ERROR, "请求格式或参数不正确"));
+        };
     }
 
     @PostMapping("refresh")
