@@ -1,9 +1,13 @@
 package com.liushao.user.controller;
 
+import com.liushao.auth.CurrentUserContext;
+import com.liushao.auth.RequireAuthentication;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.ProfileResponse;
+import com.liushao.user.pojo.ProfileUpdateRequest;
 import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.service.UserService;
 import com.liushao.user.service.AuthRateLimiter;
@@ -50,6 +54,24 @@ public class UserController {
             case INVALID -> ResponseEntity.badRequest()
                     .body(new Result(false, StatusCode.ERROR, "请求格式或参数不正确"));
         };
+    }
+
+    @GetMapping("profile")
+    @RequireAuthentication
+    public ResponseEntity<Result> profile() {
+        ProfileResponse profile = userService.profile(CurrentUserContext.require().getUserId());
+        return profile == null
+                ? ResponseEntity.status(401).body(new Result(false, StatusCode.ACCESSERROR, "请先登录"))
+                : ResponseEntity.ok(new Result(true, StatusCode.OK, "查询成功", profile));
+    }
+
+    @PutMapping("profile")
+    @RequireAuthentication
+    public ResponseEntity<Result> updateProfile(@Valid @RequestBody ProfileUpdateRequest request) {
+        ProfileResponse profile = userService.updateProfile(CurrentUserContext.require().getUserId(), request);
+        return profile == null
+                ? ResponseEntity.status(401).body(new Result(false, StatusCode.ACCESSERROR, "请先登录"))
+                : ResponseEntity.ok(new Result(true, StatusCode.OK, "修改成功", profile));
     }
 
     @PostMapping("refresh")

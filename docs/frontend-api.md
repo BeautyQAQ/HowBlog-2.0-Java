@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.3.0`
-> 当前同步 revision：`12`
+> 当前契约版本：`6.4.0`
+> 当前同步 revision：`13`
 > 最后更新：`2026-10-14`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -108,6 +108,7 @@ REST 接口返回 `Result`：
 写操作输入约束：
 
 - 注册：`mobile` 必填且为 11 位以 `1` 开头的数字；`password` 必填、8 到 64 个字符；`nickname` 可选、最长 100 个字符。
+- 修改资料：`nickname` 最长 100、`avatar` 最长 500、`sex` 最长 16、`email` 最长 255 且需为合法邮箱、`interest` 与 `personality` 最长 500；提供的字符串不能为纯空白，未提供的字段保留原值。
 - 新增文章：`title` 和 `content` 必填，不能是空字符串或纯空白。
 - 新增评论：`articleid` 和 `content` 必填，不能是空字符串或纯空白。
 - 新增标签：`labelname` 必填且非空白；`count`、`fans` 如提供则必须大于等于 0。
@@ -333,6 +334,55 @@ REST 接口返回 `Result`：
 - 响应带 `Cache-Control: no-store`。成功后清理本地访问/刷新凭据并关闭本地 WebSocket。撤销提交后新到达的 REST 鉴权与 IM 收发校验将拒绝该会话。
 
 两个凭据都属于敏感信息，只经 HTTPS/WSS 传递，不写日志、埋点、错误报告或共享 URL。刷新凭据数据库仅存摘要，服务端不提供找回接口。前端不得把仅删除本地 token 等同于已完成服务端退出。
+
+### GET `/user/profile`
+
+查看当前登录用户的完整资料。需要 `Authorization: Bearer <token>`。响应 `data` 为本人资料的安全视图，包含 `id`、`mobile`、`nickname`、`sex`、`avatar`、`email`、`birthday`、`regdate`、`updatedate`、`lastdate`、`online`、`interest`、`personality`、`fanscount`、`followcount`；不包含密码。时间字段按 Java `Date` 序列化，与其它接口一致：
+
+```json
+{
+  "flag": true,
+  "code": 20000,
+  "message": "查询成功",
+  "data": {
+    "id": "10001",
+    "mobile": "13800000000",
+    "nickname": "Alice",
+    "sex": "1",
+    "avatar": "https://example.test/avatar.png",
+    "email": "alice@example.test",
+    "birthday": "1995-06-17T00:00:00.000+00:00",
+    "regdate": "2026-10-14T00:00:00.000+00:00",
+    "fanscount": 0,
+    "followcount": 0
+  }
+}
+```
+
+未携带或携带无效 token 返回 HTTP 401、`code: 20003`；token 有效但用户已不存在时同样返回 HTTP 401、`message: "请先登录"`。
+
+### PUT `/user/profile`
+
+修改当前登录用户的资料。需要 `Authorization: Bearer <token>`。请求体只需提供要修改的字段；未提供或为 `null` 的字段保留原值，未知字段以及不可修改字段（`id`、`mobile`、`password`、`regdate`、`updatedate`、`lastdate`、`online`、`fanscount`、`followcount`）会被忽略。
+
+```json
+{
+  "nickname": "Bob",
+  "avatar": "https://example.test/new.png",
+  "sex": "1",
+  "birthday": "1995-06-17T00:00:00.000Z",
+  "email": "bob@example.test",
+  "interest": "Java",
+  "personality": "安静"
+}
+```
+
+- 字符串字段不能为纯空白，首尾空白会被去除；`nickname` 最长 100，`avatar` 最长 500，`sex` 最长 16，`email` 最长 255 且需为合法邮箱格式，`interest`、`personality` 最长 500。
+- `birthday` 接受与响应一致的日期字符串或毫秒时间戳；不能通过该接口清空已有生日。
+- 校验失败返回 HTTP 400、`code: 20001`；认证失败返回 HTTP 401、`code: 20003`。
+- 成功返回 HTTP 200、`code: 20000`、`message: "修改成功"`，`data` 为修改后的完整资料（结构同 `GET /user/profile`）。
+
+修改手机号与密码不在本接口范围；后端不提供头像文件上传，`avatar` 只是 URL 字符串。
 
 ## 基础服务（9001）
 
@@ -628,7 +678,8 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 - 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。已在隔离临时数据上通过真实 MySQL、Redis 和 HTTP 旧键迁移验收；生产部署仍需按目标环境复核连接、密钥和数据备份策略。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
 - 已有基础必填、非空白、非负计数和分页校验；最大文本长度、状态枚举、关联资源存在性仍未全面校验。
-- 用户表当前没有手机号唯一约束，注册去重依赖应用层查询，极高并发下可能产生重复手机号记录；历史上同一手机号已有多条记录时注册会被拒绝。后端尚未提供邮箱/短信验证、密码找回或资料修改接口。
+- 用户表当前没有手机号唯一约束，注册去重依赖应用层查询，极高并发下可能产生重复手机号记录；历史上同一手机号已有多条记录时注册会被拒绝。后端尚未提供邮箱/短信验证与密码找回。
+- 资料接口只允许修改 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`；`mobile`、密码、计数与统计字段不可通过该接口修改。头像目前只是 URL 字符串，后端不提供文件上传。
 - 已通过 H2 完整登录/刷新/退出事务与 MVC 测试、IM 处理器撤销测试；此前会话核心的真实 MySQL 事务验收已通过。本轮未执行真实浏览器、多实例 IM 或全链路 MySQL/Redis 联调。
 - 文章服务需要 MySQL 和 Redis；所有业务服务的具体连接配置属于部署环境，不写入前端代码或文档。
 - 升级前在目标库审核并执行附加认证表迁移；三个服务必须使用相同的认证表/用户表、JWT 密钥及一致的时钟。协调部署三个服务，禁止混用仍仅验签的旧实例；部署后旧客户端必须重登。迁移不自动执行，也不自动授予管理员。

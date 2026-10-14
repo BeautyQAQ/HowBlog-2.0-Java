@@ -144,6 +144,8 @@ mvn -pl how_user spring-boot:run
 | --- | --- | --- |
 | `POST` | `/user/register` | 用户注册，成功不自动登录 |
 | `POST` | `/user/login` | 用户登录，成功返回 Bearer JWT |
+| `GET` | `/user/profile` | 查看本人资料，需要 Bearer JWT |
+| `PUT` | `/user/profile` | 修改本人资料，需要 Bearer JWT |
 | `POST` | `/user/refresh` | 刷新访问与刷新凭据 |
 | `POST` | `/user/logout` | 退出当前会话 |
 

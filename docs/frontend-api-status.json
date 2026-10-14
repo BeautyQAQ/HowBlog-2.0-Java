@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "6.3.0",
-  "revision": 12,
+  "contractVersion": "6.4.0",
+  "revision": 13,
   "updatedAt": "2026-10-14",
-  "latestChangeId": "API-20261014-012",
+  "latestChangeId": "API-20261014-013",
   "latestChangeType": "feature",
   "breaking": false,
   "requiresFrontendAction": false,
   "changedAreas": [
-    "user-registration",
-    "auth-rate-limit-register-ip"
+    "user-profile-read",
+    "user-profile-update"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

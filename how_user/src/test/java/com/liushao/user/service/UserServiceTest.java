@@ -5,6 +5,8 @@ import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.ProfileResponse;
+import com.liushao.user.pojo.ProfileUpdateRequest;
 import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.pojo.User;
 import org.junit.jupiter.api.BeforeEach;
@@ -147,6 +149,50 @@ class UserServiceTest {
         assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "x".repeat(65), null)));
         assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "        ", null)));
         verify(userDao, never()).findAllByMobile(org.mockito.ArgumentMatchers.anyString());
+        verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+    }
+
+    @Test
+    void profileReturnsNullForMissingUserAndMapsFields() {
+        assertNull(userService.profile("missing"));
+
+        User user = userWithPassword(PASSWORD);
+        user.setEmail("alice@example.test");
+        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(user));
+
+        ProfileResponse profile = userService.profile("10001");
+
+        assertEquals("10001", profile.getId());
+        assertEquals(MOBILE, profile.getMobile());
+        assertEquals("Alice", profile.getNickname());
+        assertEquals("alice@example.test", profile.getEmail());
+    }
+
+    @Test
+    void updateProfileAppliesOnlyProvidedFieldsAndStrips() {
+        User user = userWithPassword(PASSWORD);
+        user.setAvatar("https://example.test/old.png");
+        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(user));
+        ProfileUpdateRequest request = new ProfileUpdateRequest();
+        request.setNickname("  Bob  ");
+        request.setEmail("bob@example.test");
+
+        ProfileResponse updated = userService.updateProfile("10001", request);
+
+        assertEquals("Bob", updated.getNickname());
+        assertEquals("bob@example.test", updated.getEmail());
+        assertEquals("https://example.test/old.png", updated.getAvatar());
+        assertEquals(MOBILE, updated.getMobile());
+        assertNotNull(user.getUpdatedate());
+        verify(userDao).save(user);
+    }
+
+    @Test
+    void updateProfileReturnsNullForMissingUser() {
+        when(userDao.findById("missing")).thenReturn(java.util.Optional.empty());
+
+        assertNull(userService.updateProfile("missing", new ProfileUpdateRequest()));
+
         verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
     }
 

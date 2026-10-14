@@ -155,3 +155,15 @@
 - 部署动作：无需新迁移；用户表没有手机号唯一索引，去重为应用层查询，如需数据库级唯一约束须先核对历史重复数据并单独评审 DDL。注册限流变量见 [admin-operations.md](admin-operations.md)。
 - 验证：新增 `UserServiceTest` 3 项、`UserControllerTest` 8 项（成功、重复、5 组非法参数、注册限流先于业务解析）；gated `UserRegisterMySqlTest` 在测试环境真实 MySQL 上通过（BCrypt 与计数断言、重复与非法输入拒绝、临时用户按主键删除无残留）；全量 `mvn test` 171 项、0 失败、0 错误、5 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
 - 发布状态：已随后端提交 `1c03b70` 推送至 `origin/master`；前端可接入注册表单，无破坏性改动。
+
+## Revision 13 - API-20261014-013
+
+- 日期：2026-10-14
+- 类型：能力新增
+- 破坏性变更：否；contract version `6.4.0`。
+- 影响范围：用户服务新增 `GET /user/profile` 与 `PUT /user/profile`；本人资料读取与修改。
+- 变更内容：新增需认证的资料接口。`GET /user/profile` 返回本人资料安全视图（`id`、`mobile`、`nickname`、`sex`、`avatar`、`email`、`birthday`、`regdate`、`updatedate`、`lastdate`、`online`、`interest`、`personality`、`fanscount`、`followcount`，不含密码）。`PUT /user/profile` 支持部分更新 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`：未提供或为 `null` 的字段保留原值；字符串字段不能为纯空白并在保存前去除首尾空白；`email` 需为合法邮箱格式；`id`、`mobile`、`password`、计数与时间统计字段不可修改（被忽略）。成功返回 `data` 为修改后的完整资料；校验失败 400/20001；token 无效或用户不存在 401/20003。`updatedate` 由服务端在每次成功修改时更新。
+- 前端动作：可以接入个人资料页：进入时用 `GET /user/profile` 加载，提交时用 `PUT /user/profile` 只发送变更字段，成功后用响应 `data` 覆盖本地资料。不要尝试通过该接口修改手机号或密码；头像字段是 URL 字符串，后端不提供上传。保存 revision `13`。
+- 部署动作：无需迁移或新配置；资料接口不参与认证限流，仍受既有 token 会话校验保护。
+- 验证：新增 `UserProfileTest` 6 项（认证、脱敏读取、部分更新、不可修改字段忽略、5 组非法输入 400、空更新）、`UserServiceTest` 3 项；gated `UserProfileMySqlTest` 在测试环境真实 MySQL 上通过（注册临时用户后读取与部分更新，按主键删除，DBX 复核 `profile-test` 残留 0）；全量 `mvn test` 181 项、0 失败、0 错误、6 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
+- 发布状态：待提交发布；前端可接入资料页，无破坏性改动。

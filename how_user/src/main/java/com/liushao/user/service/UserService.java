@@ -4,6 +4,8 @@ import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.ProfileResponse;
+import com.liushao.user.pojo.ProfileUpdateRequest;
 import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.pojo.User;
 import com.liushao.util.IdWorker;
@@ -93,6 +95,27 @@ public class UserService {
 
     public enum RegisterResult {
         SUCCESS, INVALID, DUPLICATE
+    }
+
+    @Transactional(timeout = 15)
+    public ProfileResponse profile(String userId) {
+        return userDao.findById(userId).map(ProfileResponse::from).orElse(null);
+    }
+
+    @Transactional(timeout = 15)
+    public ProfileResponse updateProfile(String userId, ProfileUpdateRequest request) {
+        return userDao.findById(userId).map(existing -> {
+            if (request.getNickname() != null) existing.setNickname(request.getNickname().strip());
+            if (request.getAvatar() != null) existing.setAvatar(request.getAvatar().strip());
+            if (request.getSex() != null) existing.setSex(request.getSex().strip());
+            if (request.getBirthday() != null) existing.setBirthday(request.getBirthday());
+            if (request.getEmail() != null) existing.setEmail(request.getEmail().strip());
+            if (request.getInterest() != null) existing.setInterest(request.getInterest().strip());
+            if (request.getPersonality() != null) existing.setPersonality(request.getPersonality().strip());
+            existing.setUpdatedate(new Date());
+            userDao.save(existing);
+            return ProfileResponse.from(existing);
+        }).orElse(null);
     }
 
     @Transactional(timeout = 15)
