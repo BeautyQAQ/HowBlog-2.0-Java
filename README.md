@@ -190,6 +190,8 @@ mvn -pl how_user spring-boot:run
 
 评论 Controller 同时提供按评论 ID和按文章 ID查询评论：前者使用 `GET /comment/{id}`，后者使用 `GET /comment/article/{articleId}`。
 
+文章请求和响应可使用 `labelIds` 字符串数组关联标签。新增时写入关系，编辑时省略保留、空数组清空；文章搜索可按 `labelIds` 筛选同时包含全部标签的文章。部署前需执行 `docs/mysql-article-label-migration.sql`，历史文章不会自动补标签关系。
+
 ## 即时通讯
 
 项目已移除环信 IM、外部 SDK 和外部 CDN，`how_user` 内置基于 Spring WebSocket 的轻量 IM。启动用户服务后可以访问：
@@ -217,6 +219,7 @@ WebSocket 地址为 `ws://localhost:9008/im?token=<access-token>`，HTTPS 环境
 - 配置文件中的 MySQL 驱动类使用 Connector/J 8 的 `com.mysql.cj.jdbc.Driver`。
 - 当前访问令牌由 `how_user` 签发，其他服务使用同一 `HOW_AUTH_JWT_SECRET` 校验；暂无刷新、退出或主动撤销接口。
 - 评论点赞已按 token 用户进行去重；MySQL 唯一关系表与原子计数负责最终一致性，Redis 仅保留提交后的短期兼容缓存。部署前需执行 `docs/mysql-thumbup-migration.sql`；IM 多实例广播仍未完成。
+- 文章标签使用 `tb_article_label` 唯一关系表，关系变更与 `tb_label.count` 在同一事务内维护；部署前需执行 `docs/mysql-article-label-migration.sql`，不会重算历史标签计数。
 - 当前 IM 使用 token 对应的用户 ID 作为身份，消息仍保存在进程内存中，仅适合开发测试。
 
 ## 构建验证

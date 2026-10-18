@@ -1,6 +1,7 @@
 package com.liushao.article.service;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -20,11 +21,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.ArticleLabelDao;
 import com.liushao.article.dao.ArticleThumbupDao;
 import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
 import com.liushao.web.ForbiddenException;
+import com.liushao.web.InvalidRequestException;
 import com.liushao.web.ResourceNotFoundException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,9 +51,10 @@ class ArticleServiceTest {
     @Mock private IdWorker idWorker;
     @Mock private UserRoleDao userRoleDao;
     @Mock private ArticleThumbupDao articleThumbupDao;
+    @Mock private ArticleLabelDao articleLabelDao;
 
     private ArticleService service() {
-        return new ArticleService(articleDao, idWorker, userRoleDao, articleThumbupDao);
+        return new ArticleService(articleDao, idWorker, userRoleDao, articleThumbupDao, articleLabelDao);
     }
 
     private Article draft(String userId) {
@@ -92,6 +97,34 @@ class ArticleServiceTest {
         assertEquals(0, article.getComment());
         assertNotNull(article.getUpdatetime());
         verify(articleDao).save(article);
+    }
+
+    @Test
+    void addStoresDistinctTrimmedLabels() {
+        when(idWorker.nextId()).thenReturn(123L);
+        when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+        Article article = new Article();
+        article.setTitle("title");
+        article.setContent("body");
+        article.setLabelIds(List.of(" java ", "java", "spring"));
+
+        service().add(article, "author");
+
+        verify(articleLabelDao).deleteByArticleId("123");
+        verify(articleLabelDao).insertExistingLabels("123", List.of("java", "spring"));
+    }
+
+    @Test
+    void addRejectsUnknownLabelsBeforeSavingArticle() {
+        when(articleLabelDao.countExistingLabels(List.of("missing"))).thenReturn(0L);
+        Article article = new Article();
+        article.setTitle("title");
+        article.setContent("body");
+        article.setLabelIds(List.of("missing"));
+
+        assertThrows(InvalidRequestException.class, () -> service().add(article, "author"));
+
+        verify(articleDao, never()).save(any());
     }
 
     @Test
@@ -270,6 +303,36 @@ class ArticleServiceTest {
     }
 
     @Test
+    void updateReplacesLabelsOnlyWhenLabelsAreProvided() {
+        Article existing = draft("author");
+        existing.setId("one");
+        when(articleDao.findById("one")).thenReturn(Optional.of(existing));
+        when(articleLabelDao.findLabelIdsByArticleId("one")).thenReturn(List.of("java"));
+        Article update = new Article();
+        update.setId("one");
+        update.setLabelIds(List.of());
+
+        assertTrue(service().update(update, "author"));
+
+        verify(articleLabelDao).deleteByArticleId("one");
+    verify(articleLabelDao).decrementLabelCounts(List.of("java"));
+        verify(articleLabelDao, never()).insertExistingLabels(any(), any());
+    }
+
+    @Test
+    void deleteRemovesArticleLabelsBeforeDeletingArticle() {
+        Article existing = draft("author");
+        when(articleDao.findById("one")).thenReturn(Optional.of(existing));
+        when(articleLabelDao.findLabelIdsByArticleId("one")).thenReturn(List.of("java"));
+
+        assertTrue(service().delete("one", "author"));
+
+        verify(articleLabelDao).deleteByArticleId("one");
+        verify(articleLabelDao).decrementLabelCounts(List.of("java"));
+        verify(articleDao).delete(existing);
+    }
+
+    @Test
     void thumbupRegistersRelationAndIncrementsOnce() {
         Article article = publishedArticle("author", 0);
         when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
@@ -344,6 +407,19 @@ class ArticleServiceTest {
         specification.getValue().toPredicate(root, mock(CriteriaQuery.class), builder);
         verify(builder, never()).or(any(Predicate.class), any(Predicate.class));
         verify(builder, never()).equal(statePath, Article.STATE_PUBLISHED);
+    }
+
+    @Test
+    void searchFiltersArticlesThatContainAllRequestedLabels() {
+        when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+        when(articleLabelDao.findArticleIdsWithAllLabels(List.of("java", "spring"), 2))
+                .thenReturn(List.of("article-one"));
+        when(articleDao.findAll(any(Specification.class), any(PageRequest.class))).thenReturn(Page.empty());
+
+        service().search(Map.of("labelIds", List.of("java", "spring")), 1, 10, null);
+
+        verify(articleLabelDao).findArticleIdsWithAllLabels(List.of("java", "spring"), 2);
+        verify(articleDao).findAll(any(Specification.class), eq(PageRequest.of(0, 10)));
     }
 
     private record SearchCapture(Predicate captured, Predicate published, Predicate ownerClause) {

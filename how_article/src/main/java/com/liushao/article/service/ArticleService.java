@@ -1,6 +1,7 @@
 package com.liushao.article.service;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.ArticleLabelDao;
 import com.liushao.article.dao.ArticleThumbupDao;
 import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
@@ -15,10 +16,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import javax.persistence.criteria.Predicate;
 
 @Service
@@ -28,17 +32,21 @@ public class ArticleService {
     private final IdWorker idWorker;
     private final UserRoleDao userRoleDao;
     private final ArticleThumbupDao articleThumbupDao;
+    private final ArticleLabelDao articleLabelDao;
 
     public ArticleService(ArticleDao articleDao, IdWorker idWorker, UserRoleDao userRoleDao,
-                          ArticleThumbupDao articleThumbupDao) {
+                          ArticleThumbupDao articleThumbupDao, ArticleLabelDao articleLabelDao) {
         this.articleDao = articleDao;
         this.idWorker = idWorker;
         this.userRoleDao = userRoleDao;
         this.articleThumbupDao = articleThumbupDao;
+        this.articleLabelDao = articleLabelDao;
     }
 
     public List<Article> findAll() {
-        return articleDao.findByState(Article.STATE_PUBLISHED);
+        List<Article> articles = articleDao.findByState(Article.STATE_PUBLISHED);
+        articles.forEach(this::populateLabels);
+        return articles;
     }
 
     /**
@@ -57,13 +65,16 @@ public class ArticleService {
                 && articleDao.incrementVisits(id) == 1) {
             article.setVisits(article.getVisits() == null ? 1 : article.getVisits() + 1);
         }
+        populateLabels(article);
         return article;
     }
 
     /**
      * 新增文章。文章以草稿创建，生命周期与统计字段由服务端维护，忽略请求体中的同名值。
      */
+    @Transactional
     public void add(Article article, String userId) {
+        List<String> labelIds = normalizeLabelIds(article.getLabelIds());
         article.setId(idWorker.nextId() + "");
         article.setUserid(userId);
         article.setState(Article.STATE_DRAFT);
@@ -74,6 +85,9 @@ public class ArticleService {
         article.setThumbup(0);
         article.setComment(0);
         articleDao.save(article);
+        if (labelIds != null) {
+            replaceLabels(article.getId(), labelIds);
+        }
     }
 
     /**
@@ -179,7 +193,9 @@ public class ArticleService {
         return ThumbupResult.SUCCESS;
     }
 
+    @Transactional
     public boolean update(Article article, String userId) {
+        List<String> labelIds = normalizeLabelIds(article.getLabelIds());
         return articleDao.findById(article.getId())
                 .filter(existing -> userId.equals(existing.getUserid()))
                 .map(existing -> {
@@ -193,14 +209,19 @@ public class ArticleService {
             if (article.getType() != null) existing.setType(article.getType());
             existing.setUpdatetime(new Date());
             articleDao.save(existing);
+            if (labelIds != null) {
+                replaceLabels(existing.getId(), labelIds);
+            }
             return true;
         }).orElse(false);
     }
 
+    @Transactional
     public boolean delete(String id, String userId) {
         return articleDao.findById(id)
                 .filter(article -> userId.equals(article.getUserid()))
                 .map(article -> {
+                    replaceLabels(id, List.of());
                     articleDao.delete(article);
                     return true;
                 })
@@ -211,6 +232,10 @@ public class ArticleService {
         if (conditions == null || page < 1 || size < 1 || size > 100) {
             throw new InvalidRequestException();
         }
+        List<String> labelIds = normalizeLabelIds(readLabelIds(conditions.get("labelIds")));
+        List<String> matchingArticleIds = labelIds == null || labelIds.isEmpty()
+                ? null
+                : articleLabelDao.findArticleIdsWithAllLabels(labelIds, labelIds.size());
         boolean administrator = isAdministrator(viewerId);
         Specification<Article> specification = (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -218,6 +243,11 @@ public class ArticleService {
                 if (entry.getValue() != null && isArticleField(entry.getKey())) {
                     predicates.add(builder.equal(root.get(entry.getKey()), entry.getValue()));
                 }
+            }
+            if (matchingArticleIds != null) {
+                predicates.add(matchingArticleIds.isEmpty()
+                        ? builder.disjunction()
+                        : root.get("id").in(matchingArticleIds));
             }
             if (!administrator) {
                 Predicate published = builder.equal(root.get("state"), Article.STATE_PUBLISHED);
@@ -229,7 +259,67 @@ public class ArticleService {
             }
             return builder.and(predicates.toArray(new Predicate[0]));
         };
-        return articleDao.findAll(specification, PageRequest.of(page - 1, size));
+        Page<Article> result = articleDao.findAll(specification, PageRequest.of(page - 1, size));
+        result.forEach(this::populateLabels);
+        return result;
+    }
+
+    private void populateLabels(Article article) {
+        article.setLabelIds(articleLabelDao.findLabelIdsByArticleId(article.getId()));
+    }
+
+    private void replaceLabels(String articleId, List<String> labelIds) {
+        List<String> existingLabelIds = articleLabelDao.findLabelIdsByArticleId(articleId);
+        if (existingLabelIds == null) {
+            existingLabelIds = List.of();
+        }
+        if (existingLabelIds.equals(labelIds)) {
+            return;
+        }
+        if (!existingLabelIds.isEmpty()) {
+            articleLabelDao.decrementLabelCounts(existingLabelIds);
+        }
+        articleLabelDao.deleteByArticleId(articleId);
+        if (!labelIds.isEmpty()) {
+            articleLabelDao.insertExistingLabels(articleId, labelIds);
+            articleLabelDao.incrementLabelCounts(labelIds);
+        }
+    }
+
+    private List<String> readLabelIds(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof List<?> values)) {
+            throw new InvalidRequestException();
+        }
+        List<String> labelIds = new ArrayList<>();
+        for (Object item : values) {
+            if (!(item instanceof String labelId)) {
+                throw new InvalidRequestException();
+            }
+            labelIds.add(labelId);
+        }
+        return labelIds;
+    }
+
+    private List<String> normalizeLabelIds(List<String> labelIds) {
+        if (labelIds == null) {
+            return null;
+        }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String labelId : labelIds) {
+            if (labelId == null || labelId.isBlank()) {
+                throw new InvalidRequestException();
+            }
+            normalized.add(labelId.trim());
+        }
+        List<String> result = new ArrayList<>(normalized);
+        Collections.sort(result);
+        if (!result.isEmpty() && articleLabelDao.countExistingLabels(result) != result.size()) {
+            throw new InvalidRequestException();
+        }
+        return result;
     }
 
     private boolean isArticleField(String field) {

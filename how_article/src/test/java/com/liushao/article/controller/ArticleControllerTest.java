@@ -22,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.ArticleLabelDao;
 import com.liushao.article.dao.CommentDao;
 import com.liushao.article.dao.CommentThumbupDao;
 import com.liushao.article.pojo.Article;
@@ -60,6 +61,7 @@ class ArticleControllerTest {
         @MockBean private com.liushao.auth.SessionVerifier sessions;
     @MockBean private com.liushao.article.dao.UserRoleDao userRoleDao;
     @MockBean private com.liushao.article.dao.ArticleThumbupDao articleThumbupDao;
+        @MockBean private ArticleLabelDao articleLabelDao;
 
     @ParameterizedTest
     @CsvSource({"POST,/article", "PUT,/article/one", "DELETE,/article/one", "PUT,/article/one/publish",
@@ -230,6 +232,16 @@ class ArticleControllerTest {
                 && "0".equals(article.getIstop())
                 && article.getUpdatetime() != null));
     }
+
+        @Test
+        void createsArticleWithDistinctLabelIds() throws Exception {
+                when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+                mvc.perform(post("/article").header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"title\":\"title\",\"content\":\"body\","
+                                                                + "\"labelIds\":[\" java \",\"java\",\"spring\"]}"))
+                                .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
+                verify(articleLabelDao).insertExistingLabels(any(), eq(List.of("java", "spring")));
+        }
 
     @Test
     void publishesAndUnpublishesOwnArticle() throws Exception {
@@ -408,6 +420,27 @@ class ArticleControllerTest {
         when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.empty());
         mvc.perform(put("/article/thumbup/one").header("Authorization", authorization()))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001));
+    }
+
+    @Test
+    void searchesArticlesByAllLabelIds() throws Exception {
+        when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+        when(articleLabelDao.findArticleIdsWithAllLabels(List.of("java", "spring"), 2))
+                .thenReturn(List.of("article-one"));
+        when(articleDao.findAll(any(Specification.class), eq(PageRequest.of(0, 10)))).thenReturn(Page.empty());
+
+        mvc.perform(post("/article/search/1/10").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labelIds\":[\"java\",\"spring\"]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(0));
+        verify(articleLabelDao).findArticleIdsWithAllLabels(List.of("java", "spring"), 2);
+    }
+
+    @Test
+    void rejectsBlankLabelId() throws Exception {
+        mvc.perform(post("/article/search/1/10").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labelIds\":[\" \" ]}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
+        verifyNoInteractions(articleDao, articleLabelDao);
     }
 
     private String authorization() {

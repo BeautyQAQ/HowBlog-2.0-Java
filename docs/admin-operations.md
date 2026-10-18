@@ -136,3 +136,18 @@ HOW_AUTH_SERVICE_TEST_CONFIG=/absolute/path/to/how_user/src/main/resources/appli
 - 用户服务的 `HOW_AUTH_REDIS_*`、认证限流与清理变量见上文各节。
 - 跨域默认保持允许所有来源；收紧来源时 REST 与 WebSocket 共用同一变量，部署后需验证预检请求和浏览器直连。
 - 使用环境变量或未跟踪的本地覆盖文件调整配置，不要为本地开发直接覆盖仓库中的其他环境配置。
+
+## 文章标签关联迁移与验收
+
+- 文章标签使用唯一关系表 `tb_article_label`，主键为 `(articleid, labelid)`，并分别关联 `tb_article` 与 `tb_label`；删除文章或标签时由外键级联清理关系。
+- 已有数据库部署前执行 [mysql-article-label-migration.sql](mysql-article-label-migration.sql)。脚本可重复执行，只创建关系表，不补历史文章标签关系，不重算既有 `tb_label.count`；执行前核对目标库、备份和外键权限，未获授权不得执行 DDL。
+- 文章创建、标签整体替换和文章删除在同一事务中维护关系与 `tb_label.count`。计数增加使用数据库原子更新，减少不会低于 0。标签不存在、标签 ID 格式错误时文章写入失败，不产生关系或文章。
+- 真实 MySQL 验收由 `HOW_ARTICLE_TEST_CONFIG` 显式启用，测试创建 `article-label-test-` 前缀标签和文章，验证创建、替换、计数变化、标签筛选及删除级联；结束后按主键精确清理，不清库、不删除其他标签或文章。
+
+```bash
+HOW_ARTICLE_TEST_CONFIG=/absolute/path/to/how_article/src/main/resources/application.yml \
+  mvn -pl how_article -am test -Dtest=ArticleLifecycleMySqlTest -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+- 2026-10-18 经用户授权，已使用 DBX 在 `nas-mysql` 的 `how-blog-smaill` 测试库执行上述幂等迁移；外键、计数、全标签筛选和删除清理验收通过。Surefire：1 项执行、0 失败、0 错误、0 跳过；DBX 复核既有 3 篇文章、5 个标签及计数不变，关系表和临时数据均为 0。未执行浏览器/前端联调；后续不要在该库重复执行非幂等业务写入。
+- 未设置配置时该测试默认跳过；本地单元/MVC 通过不代表其他环境已完成关系表迁移。生产或其他测试库仍需单独核对目标库、备份和 DDL 授权。

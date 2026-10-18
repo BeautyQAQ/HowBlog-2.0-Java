@@ -2,6 +2,7 @@ package com.liushao.article.pojo;
 
 import java.io.Serializable;
 import java.util.Date;
+import java.util.List;
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
@@ -9,6 +10,7 @@ import javax.persistence.Lob;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
+import javax.persistence.Transient;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 
@@ -55,6 +57,8 @@ public class Article implements Serializable {
     private String channelid;   //所属频道
     private String url;         //URL
     private String type;        //类型
+    @Transient
+    private List<String> labelIds;
 
     public String getId() {
         return id;
@@ -190,5 +194,13 @@ public class Article implements Serializable {
 
     public void setType(String type) {
         this.type = type;
+    }
+
+    public List<String> getLabelIds() {
+        return labelIds;
+    }
+
+    public void setLabelIds(List<String> labelIds) {
+        this.labelIds = labelIds;
     }
 }

@@ -2,10 +2,10 @@
 
 ## 1. 当前状态
 
-- 更新时间：2026-10-14
-- 当前阶段：Phase 4 第八切片完成——用户关注/取关与粉丝/关注列表（唯一关系表 `tb_user_follow` + 原子计数 + 目标行锁；DDL 经用户授权并在测试环境执行）已通过本地测试与 gated 真实 MySQL 验收，契约 revision `20`；会话清理默认关闭
-- 当前接口契约：revision `20`、contract version `6.10.0`（兼容性新增）；已提交并推送 `master`（`a8b05df`）
-- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码、文章草稿/发布、文章审核、文章浏览量、文章点赞、用户关注八个切片并完成唯一约束加固，全量 `mvn test` 251 项（10 项跳过）通过；文章收藏按用户决定不做
+- 更新时间：2026-10-18
+- 当前阶段：Phase 4 第九切片完成——文章标签关联（唯一关系表 `tb_article_label` + 标签使用数原子增减 + 按标签筛选）已通过本地测试，契约 revision `21`；真实 MySQL DDL 与 gated 验收待单独授权；会话清理默认关闭
+- 当前接口契约：revision `21`、contract version `6.11.0`（兼容性新增）；工作区代码和文档已同步，尚未提交推送
+- 总体判断：Phase 1–3 已完成并有真实存储、全量测试与容器启动依据；Phase 4 已交付注册、资料、修改密码、文章草稿/发布、文章审核、文章浏览量、文章点赞、用户关注、文章标签关联九个切片并完成唯一约束加固，全量 `mvn test` 259 项（10 项跳过）通过；文章收藏按用户决定不做
 - 计划正文：[implementation-plan.md](implementation-plan.md)
 
 状态标记：
@@ -24,7 +24,7 @@
 - [x] 修复评论按 ID 查询与按文章查询的路由冲突，当前文章评论路径为 `GET /comment/article/{articleId}`。
 - [x] 建立前端接口契约、变更记录和机器可读状态文件。
 - [x] 验证全模块 `clean compile` 和 `test` 命令可执行。
-- [x] 最新全量 `mvn test` 159 项、0 失败、0 错误、4 项外部测试默认跳过（含跨域与真实 WebSocket 跨源握手测试、请求关联 ID 过滤器测试）；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。点赞切片已通过真实 MySQL DDL 核验、HTTP 并发和真实存储集成测试；未运行 MySQL 清理或浏览器联调。
+- [x] 最新全量 `mvn test` 259 项、0 失败、0 错误、10 项外部测试默认跳过；含真实 H2 MVC/JPA 认证闭环、IM 持续鉴权、认证限流和有界清理。文章点赞、用户关注切片已通过真实 MySQL DDL 核验、并发和真实存储集成测试；文章标签 gated 验收待迁移授权，未运行本次真实 MySQL 写入或浏览器联调。
 
 ## 3. 阶段进度
 
@@ -34,7 +34,7 @@
 | Phase 1 身份认证与安全边界 | 已完成 | 100% | AUTH-01 至 AUTH-10 已实现；真实 Redis Lua 核心行为通过，用户确认上线验收通过；会话清理维持默认关闭 |
 | Phase 2 测试与数据一致性 | 已完成 | 100% | 点赞关系表、事务计数、评论行锁和故障边界已实现；真实 MySQL DDL、20 路 HTTP 并发、旧 Redis 键迁移、全量 145 项测试及受控本地真实存储集成测试（测试环境库实际运行通过）；Testcontainers 待 CI/Docker 环境再评估，真实 Redis/MySQL 宕机演练未执行（预期行为由单元测试与运维说明覆盖） |
 | Phase 3 配置、部署与可观测性 | 已完成 | 100% | 两切片均推送并在 NAS Docker 上验证（`992c05c`、`bb098e3`）：环境变量化、请求关联 ID、`/actuator/health`、容器编排与 CI；结构化日志以 `requestId` 格式落地，JSON 输出与指标导出记为顺延增强项（需可重建容器时验证） |
-| Phase 4 博客核心产品能力 | 进行中 | 85% | 已交付：公开注册、资料读取/部分更新、修改密码、手机号唯一约束加固、文章草稿/发布、文章审核与管理员权限、文章浏览量、文章点赞、用户关注/取关与粉丝/关注列表，契约 revision 20；后续：标签关联、评论树/通知。文章收藏按用户决定不做 |
+| Phase 4 博客核心产品能力 | 进行中 | 90% | 已交付：公开注册、资料读取/部分更新、修改密码、手机号唯一约束加固、文章草稿/发布、文章审核与管理员权限、文章浏览量、文章点赞、用户关注/取关与粉丝/关注列表、文章标签关联，契约 revision 21；后续：评论树/通知。文章收藏按用户决定不做 |
 | Phase 5 IM 生产化 | 未开始 | 0% | 当前 IM 仍为进程内开发实现 |
 
 ## 4. 迭代记录：Phase 1 身份认证与安全边界
@@ -92,7 +92,8 @@
 - [x] 文章浏览量已实现并验收：`GET /article/{articleId}` 读取已发布文章时对 `visits` 执行数据库端原子加 1（`ArticleDao.incrementVisits`），作者本人读取及草稿/待审核读取不计入；无按用户或 IP 去重。gated 真实 MySQL 通过（匿名读计 1、作者读不计、他人读累计 2），DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、残留 0。
 - [x] 文章点赞已实现并验收：新增唯一关系表 `tb_article_thumbup`（DDL 经用户授权并在测试环境执行）与 `ArticleDao.findByIdForUpdate`/`incrementThumbup`；`ArticleService.thumbup` 仅对已发布文章、同一用户一次，先登记唯一关系再数据库端原子计数，重复返回 20004、缺失或非已发布返回 404，计数失败回滚关系。gated `ArticleThumbupMySqlTest` 真实 MySQL 通过（同用户 20 路并发恰好 1 成功 19 重复、10 用户并发全成功），DBX 复核既有 3 篇文章 `thumbup` 88/45/32 与 `visits` 不变、`tb_article_thumbup` 0 行、残留 0。
 - [x] 用户关注/取关与粉丝/关注列表已实现并验收：新增唯一关系表 `tb_user_follow`（DDL 经用户授权并在测试环境执行）、`UserFollow`/`UserFollowId`/`UserFollowDao`、`UserFollowService` 与 `UserSummaryResponse`；关注/取关对被关注者 `fanscount`、关注者 `followcount` 原子增减（减操作不小于 0），写入前对目标用户行 `SELECT ... FOR UPDATE`（首次 20 路并发因锁竞争失败，加锁后通过）；`UserDao` 新增粉丝/关注分页查询；列表返回公开摘要（不含手机号/邮箱/生日/密码）。gated `UserFollowMySqlTest` 真实 MySQL 通过（同关系 20 路并发恰好 1 成功 19 重复），DBX 复核既有用户计数 256/32、188/45 不变、`tb_user_follow` 0 行、残留 0。
-- [ ] 浏览量无去重，重复刷新、预取或爬虫会重复计数；无取消点赞或点赞用户列表接口。文章收藏已按用户决定不做；标签关联尚未实现（需跨服务数据与 DDL）。
+- [ ] 浏览量无去重，重复刷新、预取或爬虫会重复计数；无取消点赞或点赞用户列表接口。文章收藏已按用户决定不做。
+- [!] 文章标签关系代码、迁移脚本和本地测试已完成；`tb_article_label` DDL、真实标签计数/级联验收尚未执行，需单独确认目标测试库和写入授权。
 
 ## 5. 任务验收记录
 
@@ -135,6 +136,7 @@
 | Phase 4 第六切片（文章浏览量） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 232 项、0 失败、0 错误、8 跳过（`ArticleServiceTest` 18 项、`ArticleControllerTest` 56 项）；gated `ArticleLifecycleMySqlTest` 真实 MySQL 1 项通过（5.7 秒）；DBX 复核既有 3 篇文章 `visits` 1024/680/420 不变、`tb_article`/`tb_user`/`tb_user_role` 计数不变、残留 0 | 新增 `ArticleDao.incrementVisits`（原生 `UPDATE tb_article SET visits = visits + 1`，`@Modifying`+`@Transactional`）；`ArticleService.findById` 对非作者读取已发布文章累加浏览量并回填响应值；契约 revision 18 / `6.8.0`。未做浏览器/前端联调，未执行 DDL；已提交并推送 `52e7474` |
 | Phase 4 第七切片（文章点赞） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 239 项、0 失败、0 错误、9 跳过（`ArticleServiceTest` 22 项、`ArticleControllerTest` 58 项）；gated `ArticleThumbupMySqlTest` 真实 MySQL 1 项通过（3.7 秒）；DBX 在 `nas-mysql` 执行 `CREATE TABLE IF NOT EXISTS tb_article_thumbup`（created=1、0 行）并复核既有 3 篇文章 `thumbup` 88/45/32 与 `visits` 不变、残留 0 | 新增 `ArticleThumbup`/`ArticleThumbupId`/`ArticleThumbupDao`（`INSERT IGNORE ... SELECT` 关系登记 + `deleteClaim`）、`ArticleDao.findByIdForUpdate`/`incrementThumbup`、`ArticleService.thumbup`（`@Transactional`）与 `ThumbupResult`；新增 `PUT /article/thumbup/{articleId}`（需认证，重复 20004、缺失/非已发布 404）；`docs/mysql-article-thumbup-migration.sql` 与初始化脚本、运维说明同步；契约 revision 19 / `6.9.0`。DDL 已执行；未做浏览器/前端联调；已提交并推送 `5a2f154` |
 | Phase 4 第八切片（用户关注/取关与粉丝/关注列表） | 2026-10-14 | 2026-10-14 | 全量 `mvn test` 251 项、0 失败、0 错误、10 跳过（`UserFollowServiceTest` 7 项、`UserControllerTest` 29 项）；gated `UserFollowMySqlTest` 真实 MySQL 1 项通过（3.6 秒，首次并发失败、加 `FOR UPDATE` 后通过）；DBX 在 `nas-mysql` 执行 `CREATE TABLE IF NOT EXISTS tb_user_follow`（created=1、0 行）并复核既有用户 `fanscount`/`followcount` 256/32、188/45 不变、残留 0 | 新增 `UserFollow`/`UserFollowId`/`UserFollowDao`、`UserSummaryResponse`、`UserFollowService`；`UserDao` 新增 `findByIdForUpdate`、粉丝/关注分页查询与四个原子计数更新；新增 `PUT`/`DELETE /user/follow/{userId}`（需认证；自己 20001、重复/未关注 20005、缺失 404）与 `GET /user/{userId}/fans|follows/{page}/{size}`（公开，返回 `PageResult<UserSummary>`）；`docs/mysql-user-follow-migration.sql` 与初始化脚本、运维说明同步；契约 revision 20 / `6.10.0`。DDL 已执行；未做浏览器/前端联调；已提交并推送 `a8b05df` |
+| Phase 4 第九切片（文章标签关联） | 2026-10-18 | 2026-10-18 | 文章标签相关窄测通过；全量 `mvn test` 259 项、0 失败、0 错误、10 跳过；`bash scripts/check-api-docs.sh` 通过；`git diff --check` 通过；授权后在 `nas-mysql`/`how-blog-smaill` 执行迁移；gated `ArticleLifecycleMySqlTest` 1 项通过（5.3 秒） | 新增 `tb_article_label` 关系模型、DAO、迁移脚本和初始化表；`Article` 支持 `labelIds`，创建/整体替换/删除与 `tb_label.count` 在事务内维护，搜索要求同时命中全部标签；契约 revision 21 / `6.11.0`。DBX 确认 InnoDB、两条 `ON DELETE CASCADE` 外键；既有 3 篇文章、5 个标签及计数 `28/22/18/15/12` 不变，临时文章/标签/关系均清理为 0；未做浏览器/前端联调；工作区尚未提交 |
 
 ## 6. 变更记录
 
@@ -256,6 +258,16 @@
 - 契约同步 revision `20` / `6.10.0`（兼容性新增）：三件套、README 接口表、运维说明与集成限制说明已更新。
 - 本切片已提交并推送 `master` 为 `a8b05df`；revision 10–20 均待前端消费（前端指针仍为 revision `9`）。
 
+### 2026-10-18
+
+- 启动并完成 Phase 4 第九切片（文章标签关联）：新增唯一关系表 `tb_article_label`，复合主键为 `(articleid, labelid)`，关联文章和标签并在删除时级联清理；新增 `ArticleLabel`/`ArticleLabelId`/`ArticleLabelDao`。
+- `Article` 新增非持久化 `labelIds` 字段。文章创建时可提交标签 ID 数组；编辑时省略保留原关系，提供数组整体替换，空数组清空；删除文章清理关系。关系变化与 `tb_label.count` 的原子增减在同一事务中完成，标签 ID 会去空白、去重并排序，不存在标签返回 400。
+- 文章读取返回 `labelIds`；文章搜索支持 `labelIds` 特殊条件，要求同时包含全部指定标签。文章服务不复制标签名称，前端通过基础服务 `/label` 映射显示名称。
+- 新增 `docs/mysql-article-label-migration.sql`，`docs/mysql-init.sql` 同步建表；新增 `docs/admin-operations.md` 的迁移与 gated 验收说明。经用户授权，使用 DBX 在 `nas-mysql` 的 `how-blog-smaill` 测试库执行幂等 DDL；未补历史关系，既有文章、标签和计数未修改。
+- 测试新增文章标签创建、替换、删除、全标签筛选、非法输入和控制器边界；`ArticleServiceTest` 27 项、`ArticleControllerTest` 61 项通过；gated `ArticleLifecycleMySqlTest` 增加真实关系/计数/级联清理和全标签筛选场景，在目标库 1 项通过。全量 `mvn test` 259 项、0 失败、0 错误、10 项跳过。
+- DBX 收尾复核：`tb_article` 3 行、`tb_label` 5 行、`tb_article_label` 0 行；`article-lifecycle-test` 临时文章 0 行、`article-label-test-` 临时标签 0 行、临时关系 0 行；既有标签计数保持 `28/22/18/15/12`。
+- 契约同步 revision `21` / `6.11.0`：`docs/frontend-api.md`、`docs/frontend-api-changelog.md`、`docs/frontend-api-status.json`、README 和运维说明已更新；前端仍需从 revision 9 追赶至 21。
+
 后续每次开发完成一个任务后，必须同步更新：
 
 1. 上方阶段状态和任务勾选。
@@ -267,7 +279,7 @@
 
 下一次开始编码时，按以下顺序执行：
 
-1. 用户已明确：文章收藏不做（从路线移除）；关注/取关与粉丝/关注列表已交付。下一片建议进入标签关联（文章-标签，需跨服务数据与 DDL，先评审并单独授权）或评论树/通知；也可先做无需 DDL 的增强（文章列表按时间/热度排序、可扩展搜索）。先定义权限规则、接口契约与验收测试，再实现 Controller；注意沿用「公开只读已发布、草稿与待审核仅作者与管理员可见」的可见性规则。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。对 NAS 的写操作已获用户授权，验证与清理方式见 2026-10-14 记录（提交后在 NAS 重建验证栈做端到端、完成后 `down -v` 清理）。
+1. 用户已明确：文章收藏不做（从路线移除）；关注/取关与粉丝/关注列表、文章标签关联已交付。下一片进入评论树/通知；先定义父评论存在性、树形响应、删除/审核权限和通知触发契约，再实现 Controller。JSON 结构化日志与指标导出为 Phase 3 顺延增强项。文章标签真实 DDL 和 gated 验收已在授权测试库完成，后续不要重复执行迁移。
 2. 不要重复执行已成功的 MySQL DDL；此前核验的 `tb_comment_thumbup` 已存在。旧历史点赞总计 29 且没有可查的旧用户去重键，不要伪造或重算这些历史关系。
 3. Phase 3 期间继续保持会话清理默认关闭；不为本地开发直接覆盖其他环境配置，不提交新的凭证或内部地址。
 4. 会话清理保持默认关闭；未获单独授权前不启用清理，也不清理其他业务数据。

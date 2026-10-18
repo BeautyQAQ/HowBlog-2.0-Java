@@ -4,9 +4,9 @@
 
 本方案用于把项目从“能够编译、可以进行基础接口对接”的开发状态，推进到“身份可信、行为可验证、配置可复现、可以持续迭代”的博客后端。
 
-- 建立日期：2026-09-22；状态更新：2026-10-14
-- 当前接口契约 revision：20（contract version `6.10.0`；前端同步指针仍为 revision 9，revision 10 起待前端消费）
-- 当前契约版本：6.10.0
+- 建立日期：2026-09-22；状态更新：2026-10-18
+- 当前接口契约 revision：21（contract version `6.11.0`；前端同步指针仍为 revision 9，revision 10 起待前端消费）
+- 当前契约版本：6.11.0
 - 适用范围：`how_common`、`how_user`、`how_base`、`how_article` 及配套文档
 - 配套进度：见 [progress.md](progress.md)
 
@@ -34,6 +34,7 @@
 6. 控制器错误响应已脱敏；生产日志策略、关联 ID 和可观测性仍待完善。
 7. 端口、跨域来源与 MySQL/Redis 连接已支持环境变量覆盖（默认值不变，凭证按用户决定保留）；部署可复现性（Docker Compose、健康检查、CI）仍待 Phase 3 第二切片。
 8. 评论点赞 MySQL 关系表迁移、真实 HTTP 并发和应用实际 Redis key serializer 的旧键迁移验收已完成；可重复的真实存储集成测试 `CommentThumbupMySqlRedisTest`（`HOW_ARTICLE_TEST_CONFIG` 显式启用，默认跳过）已于 2026-10-12 在测试环境库实际运行通过。Testcontainers 受当前环境阻塞（Docker daemon 未运行、无免密 sudo、Docker Hub 连接超时），待 CI/Docker 环境可用后再评估。
+9. 文章标签关联已实现为 `tb_article_label` 唯一关系：文章读写返回/接收 `labelIds`，创建、整体替换、删除与 `tb_label.count` 在事务内维护，搜索可要求同时包含全部标签；revision 21 已同步。真实 MySQL DDL 与 gated 验收需单独授权，未授权前不执行。
 
 ## 3. 推进原则
 
@@ -233,4 +234,4 @@ AUTH-01 至 AUTH-10 的核心功能及限流/清理已实现，revision 8 已发
 - AUTH-09 已完成登录与公开刷新/退出路由、JWT 会话 ID、REST/IM 会话校验，并覆盖真实 H2 用户查询、签发失败回滚和跨会话隔离；revision 7 已发布。
 - AUTH-10 已实现 Redis 认证限流与过期会话/摘要有界清理（默认关闭），本地测试及 2026-09-23 隔离 Redis Lua 固定窗口/并发/TTL 验收通过；用户同日确认上线验收通过。revision 8 已随 `79c4c61` 发布至 `origin/master`；前端已消费 revision 8。Phase 1 已收口；Phase 2 已于 2026-10-12 完成（含真实存储集成测试），清理保持默认关闭，启用需另行授权。
 - Phase 3 第一切片（2026-10-13）已完成配置环境化：端口、`HOW_CORS_ALLOWED_ORIGINS`、MySQL/Redis 连接支持环境变量覆盖且默认值不变；`@CrossOrigin` 收敛到共享 `CorsOrigins` 与各服务 `WebMvcConfigurer`；契约发布 revision 10 / `6.1.0`（兼容）。第二切片为 Docker Compose、健康检查、结构化日志与 CI。
-- Phase 4（2026-10-14）已交付注册、资料读取/部分更新、修改密码（撤销其他会话）、手机号唯一约束加固、文章草稿/发布、文章审核、文章浏览量、文章点赞、用户关注/取关与粉丝/关注列表八个切片：`POST /article` 创建草稿并服务端维护生命周期字段，`publish`/`unpublish`/`submit` 仅作者，`approve`/`reject` 仅数据库 `ADMIN`，公开读取只返回已发布、草稿与待审核仅作者或管理员可见，非作者读取已发布文章累加浏览量，文章点赞与用户关注均使用唯一关系表（`tb_article_thumbup`、`tb_user_follow`，DDL 已执行）与原子计数；契约 revision 20 / `6.10.0`。文章收藏按用户决定不做；后续切片为标签关联（需 DDL，先评审并单独授权）与评论树/通知。
+- Phase 4（2026-10-18）已交付注册、资料读取/部分更新、修改密码（撤销其他会话）、手机号唯一约束加固、文章草稿/发布、文章审核、文章浏览量、文章点赞、用户关注/取关与粉丝/关注列表、文章标签关联九个切片：`POST /article` 创建草稿并服务端维护生命周期字段，`publish`/`unpublish`/`submit` 仅作者，`approve`/`reject` 仅数据库 `ADMIN`，公开读取只返回已发布、草稿与待审核仅作者或管理员可见，非作者读取已发布文章累加浏览量，文章点赞、用户关注和文章标签均使用唯一关系表（`tb_article_thumbup`、`tb_user_follow`、`tb_article_label`）与原子计数；契约 revision 21 / `6.11.0`。文章收藏按用户决定不做；下一切片为评论树/通知。

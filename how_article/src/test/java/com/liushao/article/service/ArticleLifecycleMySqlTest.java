@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -59,6 +60,7 @@ class ArticleLifecycleMySqlTest {
         String stage = "configuration";
         List<String> articleIds = new ArrayList<>();
         List<String> adminIds = new ArrayList<>();
+        List<String> labelIds = new ArrayList<>();
         JdbcTemplate jdbc = null;
         try {
             Properties settings = readSettings();
@@ -78,11 +80,38 @@ class ArticleLifecycleMySqlTest {
                 article.setContent("article lifecycle integration fixture");
                 article.setState(Article.STATE_PUBLISHED);
                 article.setVisits(99);
+                String labelPrefix = "article-label-test-" + UUID.randomUUID().toString().replace("-", "");
+                String firstLabelId = labelPrefix + "-a";
+                String secondLabelId = labelPrefix + "-b";
+                insertLabel(jdbc, firstLabelId, "article-label-test-a");
+                insertLabel(jdbc, secondLabelId, "article-label-test-b");
+                labelIds.add(firstLabelId);
+                labelIds.add(secondLabelId);
+                article.setLabelIds(List.of(firstLabelId, secondLabelId));
                 service.add(article, AUTHOR);
                 articleIds.add(article.getId());
                 assertEquals(Article.STATE_DRAFT, storedState(jdbc, article.getId()));
                 assertNull(storedCreatetime(jdbc, article.getId()));
                 assertEquals(0, storedVisits(jdbc, article.getId()));
+                assertEquals(List.of(firstLabelId, secondLabelId), storedLabelIds(jdbc, article.getId()));
+                assertEquals(1L, storedLabelCount(jdbc, firstLabelId));
+                assertEquals(1L, storedLabelCount(jdbc, secondLabelId));
+                stage = "search article by all labels";
+                assertEquals(1, service.search(Map.of("labelIds", List.of(firstLabelId, secondLabelId)),
+                    1, 10, AUTHOR).getTotalElements());
+
+                stage = "replace article labels";
+                Article labelUpdate = new Article();
+                labelUpdate.setId(article.getId());
+                labelUpdate.setLabelIds(List.of(secondLabelId));
+                assertTrue(service.update(labelUpdate, AUTHOR));
+                assertEquals(List.of(secondLabelId), storedLabelIds(jdbc, article.getId()));
+                assertEquals(0L, storedLabelCount(jdbc, firstLabelId));
+                assertEquals(1L, storedLabelCount(jdbc, secondLabelId));
+                assertEquals(1, service.search(Map.of("labelIds", List.of(secondLabelId)),
+                    1, 10, AUTHOR).getTotalElements());
+                assertEquals(0, service.search(Map.of("labelIds", List.of(firstLabelId, secondLabelId)),
+                    1, 10, AUTHOR).getTotalElements());
 
                 stage = "publish";
                 assertTrue(service.publish(article.getId(), AUTHOR));
@@ -134,8 +163,8 @@ class ArticleLifecycleMySqlTest {
                 assertEquals(Article.STATE_DRAFT, storedState(jdbc, article.getId()));
             }
             stage = "cleanup verification";
-            cleanup(jdbc, articleIds, adminIds);
-            assertNoLeftovers(jdbc, articleIds, adminIds);
+            cleanup(jdbc, articleIds, adminIds, labelIds);
+            assertNoLeftovers(jdbc, articleIds, adminIds, labelIds);
         } catch (Throwable failure) {
             int line = java.util.Arrays.stream(failure.getStackTrace())
                     .filter(frame -> frame.getClassName().equals(getClass().getName()))
@@ -145,7 +174,7 @@ class ArticleLifecycleMySqlTest {
         } finally {
             if (jdbc != null) {
                 try {
-                    cleanup(jdbc, articleIds, adminIds);
+                    cleanup(jdbc, articleIds, adminIds, labelIds);
                 } catch (RuntimeException ignored) {
                     // 失败路径的兜底清理，清理结果由主流程断言负责
                 }
@@ -166,6 +195,19 @@ class ArticleLifecycleMySqlTest {
         return jdbc.queryForObject("SELECT visits FROM tb_article WHERE id = ?", Integer.class, id);
     }
 
+    private List<String> storedLabelIds(JdbcTemplate jdbc, String articleId) {
+        return jdbc.queryForList("SELECT labelid FROM tb_article_label WHERE articleid = ? ORDER BY labelid",
+                String.class, articleId);
+    }
+
+    private long storedLabelCount(JdbcTemplate jdbc, String labelId) {
+        return jdbc.queryForObject("SELECT count FROM tb_label WHERE id = ?", Long.class, labelId);
+    }
+
+    private void insertLabel(JdbcTemplate jdbc, String labelId, String name) {
+        jdbc.update("INSERT INTO tb_label (id, labelname, count) VALUES (?, ?, 0)", labelId, name);
+    }
+
     private void insertAdministrator(JdbcTemplate jdbc, String userId) {
         String mobile = "alt" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
         jdbc.update("INSERT INTO tb_user (id, mobile, nickname) VALUES (?, ?, ?)",
@@ -173,7 +215,8 @@ class ArticleLifecycleMySqlTest {
         jdbc.update("INSERT INTO tb_user_role (user_id, role) VALUES (?, 'ADMIN')", userId);
     }
 
-    private void cleanup(JdbcTemplate jdbc, List<String> articleIds, List<String> adminIds) {
+    private void cleanup(JdbcTemplate jdbc, List<String> articleIds, List<String> adminIds,
+                         List<String> labelIds) {
         for (String articleId : articleIds) {
             jdbc.update("DELETE FROM tb_article WHERE id = ?", articleId);
         }
@@ -181,9 +224,13 @@ class ArticleLifecycleMySqlTest {
             jdbc.update("DELETE FROM tb_user_role WHERE user_id = ?", adminId);
             jdbc.update("DELETE FROM tb_user WHERE id = ?", adminId);
         }
+        for (String labelId : labelIds) {
+            jdbc.update("DELETE FROM tb_label WHERE id = ?", labelId);
+        }
     }
 
-    private void assertNoLeftovers(JdbcTemplate jdbc, List<String> articleIds, List<String> adminIds) {
+    private void assertNoLeftovers(JdbcTemplate jdbc, List<String> articleIds, List<String> adminIds,
+                                   List<String> labelIds) {
         for (String articleId : articleIds) {
             int remaining = jdbc.queryForObject("SELECT COUNT(*) FROM tb_article WHERE id = ?",
                     Integer.class, articleId);
@@ -195,6 +242,12 @@ class ArticleLifecycleMySqlTest {
             assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tb_user WHERE id = ?",
                     Integer.class, adminId));
         }
+            for (String labelId : labelIds) {
+                assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tb_article_label WHERE labelid = ?",
+                    Integer.class, labelId));
+                assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tb_label WHERE id = ?",
+                    Integer.class, labelId));
+            }
     }
 
     private Properties readSettings() {

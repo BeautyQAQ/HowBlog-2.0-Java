@@ -251,3 +251,15 @@
 - 部署动作：部署前对目标库执行 [mysql-user-follow-migration.sql](mysql-user-follow-migration.sql)（可重复执行）；新库由初始化脚本直接建表。历史 `fanscount`/`followcount` 保留、不重算、不补关系。
 - 验证：新增 `UserFollowServiceTest` 7 项、`UserControllerTest` 新增 4 项（未认证、关注成功/自己/重复/缺失、取关、列表与分页）；gated `UserFollowMySqlTest` 在测试环境真实 MySQL 上通过（首次/重复/自己/缺失/取关、粉丝与关注列表、同一关系 20 路并发恰好 1 成功 19 重复；首次并发因锁竞争失败，写入前对目标用户行加 `FOR UPDATE` 后通过；临时用户与关系按主键清理，DBX 复核既有用户 `fanscount`/`followcount` 256/32 与 188/45 不变、`tb_user_follow` 0 行、残留 0）；DDL 已获用户授权并在测试环境执行（`CREATE TABLE IF NOT EXISTS tb_user_follow`）；全量 `mvn test` 251 项、0 失败、0 错误、10 项外部存储测试默认跳过。真实浏览器与前端联调未执行。
 - 发布状态：已随后端提交 `a8b05df` 推送至 `origin/master`。
+
+## Revision 21 - API-20261018-021
+
+- 日期：2026-10-18
+- 类型：能力新增
+- 破坏性变更：否；contract version `6.11.0`。
+- 影响范围：文章服务 `Article` 数据模型、`POST /article`、`PUT /article/{articleId}`、`DELETE /article/{articleId}`、`GET /article`、`GET /article/{articleId}`、`POST /article/search/{page}/{size}`；新增 `tb_article_label` 关系表。
+- 变更内容：文章新增可选 `labelIds` 字符串数组。创建文章时写入标签关系；修改时省略表示保留、提供数组表示整体替换、空数组表示清空；删除文章级联清理关系。标签关系与 `tb_label.count` 在同一事务内原子增减。文章读取响应返回 `labelIds`。搜索请求可用 `labelIds` 筛选同时包含全部指定标签的文章；标签 ID 为空、格式错误或不存在返回 HTTP 400/20001。
+- 前端动作：文章编辑表单提交标签 ID 数组，读取文章时使用 `labelIds` 并通过基础服务 `/label` 映射名称；编辑时区分省略字段与空数组；文章搜索可使用 `labelIds`，按 `PageResult` 读取结果。保存 revision `21`。
+- 部署动作：部署前对目标库执行 [mysql-article-label-migration.sql](mysql-article-label-migration.sql)；新库由 `mysql-init.sql` 直接建表。迁移只创建关系表，不补历史关系或重算既有标签计数。
+- 验证：新增 `ArticleServiceTest` 与 `ArticleControllerTest` 标签保存、替换、删除、筛选和非法输入覆盖；gated `ArticleLifecycleMySqlTest` 增加真实关系、计数和级联清理验收，默认未设置配置时跳过。窄测文章控制器 `61` 项、服务 `27` 项通过；真实 MySQL DDL 和 gated 验收待单独授权。
+- 发布状态：工作区文档已同步，待本切片提交推送后由前端读取后端仓库。

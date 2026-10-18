@@ -1,8 +1,8 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.10.0`
-> 当前同步 revision：`20`
-> 最后更新：`2026-10-14`
+> 当前契约版本：`6.11.0`
+> 当前同步 revision：`21`
+> 最后更新：`2026-10-18`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
 
@@ -112,6 +112,7 @@ REST 接口返回 `Result`：
 - 修改资料：`nickname` 最长 100、`avatar` 最长 500、`sex` 最长 16、`email` 最长 255 且需为合法邮箱、`interest` 与 `personality` 最长 500；提供的字符串不能为纯空白，未提供的字段保留原值。
 - 修改密码：`oldPassword` 必填且需与当前密码一致；`newPassword` 必填、8 到 64 个字符且不能为纯空白。
 - 新增文章：`title` 和 `content` 必填，不能是空字符串或纯空白。
+- 文章 `labelIds` 如提供必须是标签 ID 字符串数组；元素会去除首尾空白并去重，空字符串或不存在的标签返回 HTTP 400。
 - 新增评论：`articleid` 和 `content` 必填，不能是空字符串或纯空白。
 - 新增标签：`labelname` 必填且非空白；`count`、`fans` 如提供则必须大于等于 0。
 - 编辑文章的 `title`、`content`，评论的 `content`，标签的 `labelname`：未提供或为 `null` 时保留原值；提供字符串时不能为空白。标签编辑的 `count`、`fans` 如提供也必须大于等于 0。
@@ -199,6 +200,7 @@ REST 接口返回 `Result`：
 | `channelid` | string | 频道 ID |
 | `url` | string | 文章 URL |
 | `type` | string | 文章类型 |
+| `labelIds` | string[] | 文章关联的标签 ID；读取文章时返回，标签名称需通过基础服务查询 |
 
 ### Comment
 
@@ -499,15 +501,15 @@ REST 接口返回 `Result`：
 
 ### GET `/article/{articleId}`
 
-按 ID 查询文章。已发布文章对所有人可见；草稿与待审核文章只有作者本人或管理员（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或文章非公开而访问者既不是作者也不是管理员时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。读取已发布文章时，若访问者不是作者（包括未登录访问者），服务端对 `visits` 执行数据库端原子加 1，响应中的 `visits` 为累加后的值；作者读取自己的文章、读取草稿或待审核文章均不计入。该接口因此具有副作用，不保证幂等。
+按 ID 查询文章。已发布文章对所有人可见；草稿与待审核文章只有作者本人或管理员（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或文章非公开而访问者既不是作者也不是管理员时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。响应中的 `labelIds` 为该文章当前关联的标签 ID。读取已发布文章时，若访问者不是作者（包括未登录访问者），服务端对 `visits` 执行数据库端原子加 1，响应中的 `visits` 为累加后的值；作者读取自己的文章、读取草稿或待审核文章均不计入。该接口因此具有副作用，不保证幂等。
 
 ### POST `/article`
 
-新增文章，创建为草稿。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。文章以草稿创建：`state` 固定为 `0`、`createtime` 为 `null`、`updatetime` 为服务端当前时间、`istop` 为 `0`、`visits`/`thumbup`/`comment` 均为 `0`，请求体中的这些字段一律被忽略；`columnid`、`image`、`ispublic`、`channelid`、`url`、`type` 由请求体提供。成功返回 `flag: true`、`code: 20000`、`message: "添加成功"`。
+新增文章，创建为草稿。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。文章以草稿创建：`state` 固定为 `0`、`createtime` 为 `null`、`updatetime` 为服务端当前时间、`istop` 为 `0`、`visits`/`thumbup`/`comment` 均为 `0`，请求体中的这些字段一律被忽略；`columnid`、`image`、`ispublic`、`channelid`、`url`、`type` 由请求体提供。可选的 `labelIds` 会在同一事务中写入文章标签关系，并使每个标签的 `count` 原子加 1；标签不存在时整个请求返回 HTTP 400 且不保存文章。成功返回 `flag: true`、`code: 20000`、`message: "添加成功"`。
 
 ### PUT `/article/{articleId}`
 
-修改文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。路径 ID 会覆盖请求体中的 `id`；作者只能修改内容字段（`columnid`、`title`、`content`、`image`、`ispublic`、`channelid`、`url`、`type`），`userid`、`state`、`createtime`、`updatetime`、统计字段和置顶状态由服务端维护。编辑不会改变文章的草稿/已发布状态。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
+修改文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。路径 ID 会覆盖请求体中的 `id`；作者只能修改内容字段（`columnid`、`title`、`content`、`image`、`ispublic`、`channelid`、`url`、`type`）。`labelIds` 如省略则保留原关联，如提供则整体替换，空数组表示清空；标签关联变化与每个标签 `count` 的原子增减在同一事务中完成。未知标签返回 HTTP 400 且不保存文章。`userid`、`state`、`createtime`、`updatetime`、统计字段和置顶状态由服务端维护。编辑不会改变文章的草稿/已发布状态。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
 
 ### PUT `/article/{articleId}/publish`
 
@@ -535,7 +537,7 @@ REST 接口返回 `Result`：
 
 ### DELETE `/article/{articleId}`
 
-删除文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
+删除文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。删除时会级联清理文章标签关系；无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
 
 ### POST `/article/search/{page}/{size}`
 
@@ -544,7 +546,8 @@ REST 接口返回 `Result`：
 - `page` 从 `1` 开始，必须大于等于 `1` 且在 Java int 范围内。
 - `size` 必须在 `1` 到 `100` 之间，包含边界；越界或无法解析的分页参数返回 HTTP 400、`code: 20001`，不再自动纠正。
 - 请求体是 JSON 对象，后端对字段做精确相等匹配，不是模糊搜索。
-- 当前允许的条件字段为：`id`、`columnid`、`userid`、`title`、`content`、`image`、`createtime`、`updatetime`、`ispublic`、`istop`、`visits`、`thumbup`、`comment`、`state`、`channelid`、`url`、`type`。
+- 当前允许的条件字段为：`id`、`columnid`、`userid`、`title`、`content`、`image`、`createtime`、`updatetime`、`ispublic`、`istop`、`visits`、`thumbup`、`comment`、`state`、`channelid`、`url`、`type`；`labelIds` 是特殊筛选字段，不做文章表精确匹配。
+- `labelIds` 如提供必须是标签 ID 字符串数组；文章必须同时关联数组中的全部标签才会返回。数组为空等同于未提供；标签不存在返回 HTTP 400、`code: 20001`。
 - 未知字段会被忽略；值为 `null` 的字段会被忽略。
 - 可见性：未携带 token 时只返回已发布文章（相当于附加 `state = "1"`）；携带有效 token 时，除已发布文章外还可返回当前用户自己的文章（含草稿、待审核）；管理员（数据库 `ADMIN` 角色）不受该限制，可查询任意状态的文章（例如用 `state: "2"` 列出待审核队列）。
 
@@ -557,7 +560,7 @@ Content-Type: application/json
 
 ```json
 {
-  "userid": "10001",
+  "labelIds": ["java", "spring"],
   "state": "1"
 }
 ```
