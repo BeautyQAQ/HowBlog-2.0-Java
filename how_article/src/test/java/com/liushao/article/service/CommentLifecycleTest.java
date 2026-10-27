@@ -2,6 +2,7 @@ package com.liushao.article.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -151,6 +152,49 @@ class CommentLifecycleTest {
         assertThrows(ResourceNotFoundException.class, () -> comments.findById("orphan", "admin"));
         assertThrows(ResourceNotFoundException.class, () -> comments.findByarticleId("missing", null));
         assertEquals(CommentService.ThumbupResult.NOT_FOUND, comments.thumbup("private-comment", "author"));
+    }
+
+    @Test
+    void publishedPrivateArticlesAndCommentsAreVisibleOnlyToTheirAuthorAndAdministrators() {
+        Comment root = save("published", null, "reader");
+        jdbc.update("UPDATE tb_article SET ispublic='0' WHERE id='published'");
+        jdbc.update("INSERT INTO tb_user (id) VALUES ('admin')");
+        jdbc.update("INSERT INTO tb_user_role (user_id, role) VALUES ('admin', 'ADMIN')");
+        for (String viewer : new String[]{null, "reader"}) {
+            assertThrows(ResourceNotFoundException.class, () -> articles.findById("published", viewer));
+            assertThrows(ResourceNotFoundException.class, () -> comments.findById(root.get_id(), viewer));
+            assertThrows(ResourceNotFoundException.class, () -> comments.findByarticleId("published", viewer));
+            assertTrue(comments.findAll(viewer).isEmpty());
+            assertTrue(articles.search(Map.of(), 1, 10, viewer).isEmpty());
+        }
+        assertTrue(articles.findAll().isEmpty());
+        assertEquals(ArticleService.ThumbupResult.NOT_FOUND, articles.thumbup("published", "reader"));
+        assertEquals(CommentService.ThumbupResult.NOT_FOUND, comments.thumbup(root.get_id(), "reader"));
+        assertThrows(ResourceNotFoundException.class, () -> comments.save(draft("published", null), "reader"));
+        assertEquals(1, count("published"));
+        for (String viewer : List.of("author", "admin")) {
+            assertEquals("0", articles.findById("published", viewer).getIspublic());
+            assertEquals(1, articles.search(Map.of(), 1, 10, viewer).getTotalElements());
+            assertEquals(1, comments.findAll(viewer).size());
+        }
+        // Existing commenters can still remove their own comments after an article becomes private.
+        assertTrue(comments.deleteById(root.get_id(), "reader"));
+        assertEquals(0, count("published"));
+    }
+
+    @Test
+    void databasePaginationKeepsPinnedAndRecentlyUpdatedArticlesInStableOrder() {
+        for (String id : List.of("old", "new-a", "new-b", "pinned")) article(id, "author", "1", 0);
+        jdbc.update("UPDATE tb_article SET istop='0', updatetime='2020-01-01 00:00:00', createtime=NULL");
+        jdbc.update("UPDATE tb_article SET updatetime='2026-01-01 00:00:00' WHERE id IN ('new-a', 'new-b')");
+        jdbc.update("UPDATE tb_article SET istop='1' WHERE id='pinned'");
+        List<String> ordered = new ArrayList<>();
+        for (int page = 1; page <= 3; page++) {
+            ordered.addAll(articles.search(Map.of(), page, 2, null).getContent().stream()
+                    .map(com.liushao.article.pojo.Article::getId).toList());
+        }
+        assertEquals(List.of("pinned", "new-b", "new-a", "published", "old"), ordered);
+        assertEquals(ordered, articles.findAll().stream().map(com.liushao.article.pojo.Article::getId).toList());
     }
 
     @Test

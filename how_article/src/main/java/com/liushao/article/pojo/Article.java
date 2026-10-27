@@ -48,6 +48,7 @@ public class Article implements Serializable {
     private Date createtime;    //发表日期
     @Temporal(TemporalType.TIMESTAMP)
     private Date updatetime;    //修改日期
+    @Pattern(regexp = "[01]", groups = {ValidationGroups.Create.class, ValidationGroups.Update.class})
     private String ispublic;    //是否公开
     private String istop;       //是否置顶
     private Integer visits;     //浏览量

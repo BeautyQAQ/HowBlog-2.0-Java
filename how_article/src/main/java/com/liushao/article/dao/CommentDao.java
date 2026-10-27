@@ -23,7 +23,8 @@ public interface CommentDao extends JpaRepository<Comment, String> {
     Optional<String> findArticleId(@Param("id") String id);
 
     @Query(value = "SELECT c.* FROM tb_comment c JOIN tb_article a ON a.id = c.articleid "
-            + "WHERE a.state = '1' OR a.userid = :viewerId OR :administrator = true "
+            + "WHERE (a.state = '1' AND (a.ispublic IS NULL OR a.ispublic = '1')) "
+            + "OR a.userid = :viewerId OR :administrator = true "
             + "ORDER BY c.publishdate DESC, c.id DESC", nativeQuery = true)
     List<Comment> findVisible(@Param("viewerId") String viewerId, @Param("administrator") boolean administrator);
 

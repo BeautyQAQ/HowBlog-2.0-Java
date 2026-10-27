@@ -77,7 +77,10 @@ class UserFollowMySqlTest {
                 stage = "follow and duplicate";
                 String alice = insertUser(jdbc, userIds);
                 String bob = insertUser(jdbc, userIds);
+                assertEquals(false, service.isFollowing(alice, bob));
                 assertEquals(UserFollowService.FollowResult.SUCCESS, service.follow(alice, bob));
+                assertEquals(true, service.isFollowing(alice, bob));
+                assertEquals(false, service.isFollowing(bob, alice));
                 assertEquals(1, relationCount(jdbc, alice, bob));
                 assertEquals(1, fansCount(jdbc, bob));
                 assertEquals(1, followCount(jdbc, alice));

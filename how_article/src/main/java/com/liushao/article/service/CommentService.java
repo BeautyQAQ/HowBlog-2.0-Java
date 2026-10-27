@@ -69,7 +69,7 @@ public class CommentService {
             throw new InvalidRequestException();
         }
         Article article = articleDao.findByIdForUpdate(comment.getArticleid())
-                .filter(existing -> Article.STATE_PUBLISHED.equals(existing.getState()))
+                .filter(existing -> Article.STATE_PUBLISHED.equals(existing.getState()) && canRead(existing, userId))
                 .orElseThrow(ResourceNotFoundException::new);
         String parentId = StringUtils.hasText(comment.getParentid()) ? comment.getParentid().strip() : null;
         if (parentId != null) {
@@ -94,7 +94,7 @@ public class CommentService {
         if (comment == null || (comment.getContent() != null && !StringUtils.hasText(comment.getContent()))) {
             throw new InvalidRequestException();
         }
-        Comment existing = lockComment(comment.get_id(), false);
+        Comment existing = lockComment(comment.get_id(), false, userId);
         if (existing == null || !userId.equals(existing.getUserid())) {
             return false;
         }
@@ -107,7 +107,7 @@ public class CommentService {
 
     @Transactional
     public boolean deleteById(String id, String userId) {
-        Comment existing = lockComment(id, false);
+        Comment existing = lockComment(id, false, userId);
         if (existing == null || !userId.equals(existing.getUserid())) {
             return false;
         }
@@ -130,10 +130,14 @@ public class CommentService {
 
     private void requireVisibleArticle(String articleId, String viewerId) {
         Article article = articleDao.findById(articleId).orElseThrow(ResourceNotFoundException::new);
-        if (!Article.STATE_PUBLISHED.equals(article.getState())
-                && !(viewerId != null && (viewerId.equals(article.getUserid()) || isAdministrator(viewerId)))) {
+        if (!canRead(article, viewerId)) {
             throw new ResourceNotFoundException();
         }
+    }
+
+    private boolean canRead(Article article, String viewerId) {
+        return ArticleVisibility.isPublic(article)
+                || (viewerId != null && (viewerId.equals(article.getUserid()) || isAdministrator(viewerId)));
     }
 
     private boolean isAdministrator(String viewerId) {
@@ -141,13 +145,14 @@ public class CommentService {
     }
 
     // All comment writes lock the article before the comment, including reply creation and branch deletion.
-    private Comment lockComment(String id, boolean requiresPublishedArticle) {
+    private Comment lockComment(String id, boolean requiresPublishedArticle, String userId) {
         String articleId = commentDao.findArticleId(id).orElse(null);
         if (articleId == null) {
             return null;
         }
         Article article = articleDao.findByIdForUpdate(articleId).orElse(null);
-        if (article == null || (requiresPublishedArticle && !Article.STATE_PUBLISHED.equals(article.getState()))) {
+        if (article == null || (requiresPublishedArticle
+                && (!Article.STATE_PUBLISHED.equals(article.getState()) || !canRead(article, userId)))) {
             return null;
         }
         return commentDao.findByIdForUpdate(id).orElse(null);
@@ -174,7 +179,7 @@ public class CommentService {
 
     @Transactional
     public ThumbupResult thumbup(String id, String userId) {
-        Comment comment = lockComment(id, true);
+        Comment comment = lockComment(id, true, userId);
         if (comment == null) {
             return ThumbupResult.NOT_FOUND;
         }

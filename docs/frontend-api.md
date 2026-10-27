@@ -1,7 +1,7 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`7.0.0`
-> 当前同步 revision：`22`
+> 当前契约版本：`8.0.0`
+> 当前同步 revision：`23`
 > 最后更新：`2026-10-27`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
@@ -112,6 +112,8 @@ REST 接口返回 `Result`：
 - 修改资料：`nickname` 最长 100、`avatar` 最长 500、`sex` 最长 16、`email` 最长 255 且需为合法邮箱、`interest` 与 `personality` 最长 500；提供的字符串不能为纯空白，未提供的字段保留原值。
 - 修改密码：`oldPassword` 必填且需与当前密码一致；`newPassword` 必填、8 到 64 个字符、UTF-8 编码不超过 72 字节且不能为纯空白。
 - 新增文章：`title` 和 `content` 必填，不能是空字符串或纯空白。
+- 文章 `content` 按纯文本处理，前端必须转义后显示并保留换行，不直接渲染为 HTML。存量 HTML 字符串不会批量转换，标签按文字显示。
+- 文章 `ispublic` 如提供只能为字符串 `"0"`（私密）或 `"1"`（公开）；新增时省略/null 默认 `"1"`，编辑时省略/null 保留原值，其他值返回 HTTP 400。历史 null 按公开处理，但仍受发布状态限制。
 - 文章 `labelIds` 如提供必须是标签 ID 字符串数组；元素会去除首尾空白并去重，空字符串或不存在的标签返回 HTTP 400。
 - 新增评论：`articleid` 和 `content` 必填且非空白；文章必须存在且已发布；可选 `parentid` 必须指向同篇文章内存在的评论。
 - 新增标签：`labelname` 必填且非空白；`count`、`fans` 如提供则必须大于等于 0。
@@ -425,6 +427,10 @@ REST 接口返回 `Result`：
 
 成功修改后，该用户在其他设备上的所有会话立即被撤销：这些设备的访问 token 再使用时返回 401、刷新凭据也失效（IM 连接在下一次消息或空闲检查时以 `1008` 关闭），需要重新登录。发起修改的当前会话保持有效，其访问 token 和刷新凭据继续可用。修改密码受来源 IP 限流（默认每 60 秒 10 次），429/503 行为与登录一致。
 
+### GET `/user/follow/{userId}`
+
+查询当前登录用户是否已关注目标用户，需要 `Authorization: Bearer <token>`。成功返回 `Result`，`code: 20000`、`message: "查询成功"`、`data: {"following": true}`（未关注为 `false`），响应带 `Cache-Control: no-store`。目标用户不存在返回 HTTP 404/20001，未认证返回 HTTP 401/20003；查询不创建关系或修改计数。前端进入文章详情或切换账号时读取状态，失败时显示重试入口，状态未知时不发起关注/取关。
+
 ### PUT `/user/follow/{userId}`
 
 关注指定用户。需要 `Authorization: Bearer <token>`。不能关注自己：返回 HTTP 200、`flag: false`、`code: 20001`、`message: "不能关注自己"`。目标用户不存在返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。重复关注返回 HTTP 200、`flag: false`、`code: 20005`、`message: "已关注"`（计数不变）。成功后服务端在 `tb_user_follow` 登记唯一关系，并对被关注者 `fanscount`、关注者 `followcount` 原子加 1，返回 `code: 20000`、`message: "关注成功"`。
@@ -500,15 +506,15 @@ REST 接口返回 `Result`：
 
 ### GET `/article`
 
-查询公开文章列表。仅返回已发布（`state` 为 `1`）的文章，草稿不出现在该列表中。成功时 `data` 为 `Article[]`。
+查询公开文章列表。仅返回已发布（`state` 为 `1`）且公开（`ispublic` 为 `"1"` 或历史 null）的文章；私密文章、草稿、待审核不出现在该列表，即使携带作者 token。成功时 `data` 为 `Article[]`，顺序为 `istop`、`updatetime`、`createtime`、`id` 依次倒序（置顶优先、最近更新优先、ID 打破时间相同的平局）。
 
 ### GET `/article/{articleId}`
 
-按 ID 查询文章。已发布文章对所有人可见；草稿与待审核文章只有作者本人或管理员（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或文章非公开而访问者既不是作者也不是管理员时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。响应中的 `labelIds` 为该文章当前关联的标签 ID。读取已发布文章时，若访问者不是作者（包括未登录访问者），服务端对 `visits` 执行数据库端原子加 1，响应中的 `visits` 为累加后的值；作者读取自己的文章、读取草稿或待审核文章均不计入。该接口因此具有副作用，不保证幂等。
+按 ID 查询文章。只有已发布且公开（`ispublic` 为 `"1"` 或历史 null）的文章对所有人可见；私密文章（包括已发布）、草稿与待审核文章只有作者本人或管理员（携带其 `Authorization: Bearer <token>`）可见。文章不存在、或文章非公开而访问者既不是作者也不是管理员时，返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。响应中的 `labelIds` 为该文章当前关联的标签 ID。读取已发布文章时，若访问者不是作者（包括未登录访问者），服务端对 `visits` 执行数据库端原子加 1，响应中的 `visits` 为累加后的值；作者读取自己的文章、读取草稿或待审核文章均不计入。该接口因此具有副作用，不保证幂等。
 
 ### POST `/article`
 
-新增文章，创建为草稿。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。文章以草稿创建：`state` 固定为 `0`、`createtime` 为 `null`、`updatetime` 为服务端当前时间、`istop` 为 `0`、`visits`/`thumbup`/`comment` 均为 `0`，请求体中的这些字段一律被忽略；`columnid`、`image`、`ispublic`、`channelid`、`url`、`type` 由请求体提供。可选的 `labelIds` 会在同一事务中写入文章标签关系，并使每个标签的 `count` 原子加 1；标签不存在时整个请求返回 HTTP 400 且不保存文章。成功返回 `flag: true`、`code: 20000`、`message: "添加成功"`。
+新增文章，创建为草稿。需要 `Authorization: Bearer <token>`。后端生成 `id`，并使用 token 中的用户 ID 覆盖请求体中的 `userid`；`title` 和 `content` 必填且非空白，否则返回 HTTP 400、`code: 20001`。文章以草稿创建，`ispublic` 未提供时默认为 `"1"`：`state` 固定为 `0`、`createtime` 为 `null`、`updatetime` 为服务端当前时间、`istop` 为 `0`、`visits`/`thumbup`/`comment` 均为 `0`，请求体中的这些字段一律被忽略；`columnid`、`image`、`ispublic`、`channelid`、`url`、`type` 由请求体提供。可选的 `labelIds` 会在同一事务中写入文章标签关系，并使每个标签的 `count` 原子加 1；标签不存在时整个请求返回 HTTP 400 且不保存文章。成功返回 `flag: true`、`code: 20000`、`message: "添加成功"`。
 
 ### PUT `/article/{articleId}`
 
@@ -536,7 +542,7 @@ REST 接口返回 `Result`：
 
 ### PUT `/article/thumbup/{articleId}`
 
-文章点赞。需要 `Authorization: Bearer <token>`。仅已发布（`state` 为 `1`）文章可点赞：服务端在唯一关系表 `tb_article_thumbup` 登记 `(articleId, userId)`，并对 `tb_article.thumbup` 执行数据库端原子加 1，同一用户对同一文章只能成功点赞一次。首次成功返回 `code: 20000`、`message: "点赞成功"`；重复点赞返回 HTTP 200、`flag: false`、`code: 20004`、`message: "不能重复点赞"`（计数不变）；文章不存在或非已发布返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。当前不提供取消点赞接口。
+文章点赞。需要 `Authorization: Bearer <token>`。仅已发布（`state` 为 `1`）且对当前用户可见的文章可点赞：服务端在唯一关系表 `tb_article_thumbup` 登记 `(articleId, userId)`，并对 `tb_article.thumbup` 执行数据库端原子加 1，同一用户对同一文章只能成功点赞一次。首次成功返回 `code: 20000`、`message: "点赞成功"`；重复点赞返回 HTTP 200、`flag: false`、`code: 20004`、`message: "不能重复点赞"`（计数不变）；文章不存在、非已发布或对当前用户不可见返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。当前不提供取消点赞接口。
 
 ### DELETE `/article/{articleId}`
 
@@ -549,10 +555,11 @@ REST 接口返回 `Result`：
 - `page` 从 `1` 开始，必须大于等于 `1` 且在 Java int 范围内。
 - `size` 必须在 `1` 到 `100` 之间，包含边界；越界或无法解析的分页参数返回 HTTP 400、`code: 20001`，不再自动纠正。
 - 请求体是 JSON 对象，后端对字段做精确相等匹配，不是模糊搜索。
+- 数据库在分页前统一按 `istop`、`updatetime`、`createtime`、`id` 依次倒序；前端保持返回顺序，不再仅对当前页另行排序。固定数据集翻页顺序稳定；这是偏移分页，有并发新增/编辑时不提供快照语义。
 - 当前允许的条件字段为：`id`、`columnid`、`userid`、`title`、`content`、`image`、`createtime`、`updatetime`、`ispublic`、`istop`、`visits`、`thumbup`、`comment`、`state`、`channelid`、`url`、`type`；`labelIds` 是特殊筛选字段，不做文章表精确匹配。
 - `labelIds` 如提供必须是标签 ID 字符串数组；文章必须同时关联数组中的全部标签才会返回。数组为空等同于未提供；标签不存在返回 HTTP 400、`code: 20001`。
 - 未知字段会被忽略；值为 `null` 的字段会被忽略。
-- 可见性：未携带 token 时只返回已发布文章（相当于附加 `state = "1"`）；携带有效 token 时，除已发布文章外还可返回当前用户自己的文章（含草稿、待审核）；管理员（数据库 `ADMIN` 角色）不受该限制，可查询任意状态的文章（例如用 `state: "2"` 列出待审核队列）。
+- 可见性：未携带 token 时只返回已发布且公开的文章；携带有效 token 时，除公开已发布文章外还可返回当前用户自己的文章（含私密、草稿、待审核）；管理员（数据库 `ADMIN` 角色）不受该限制，可查询任意状态的文章（例如用 `state: "2"` 列出待审核队列）。
 
 请求示例：
 
@@ -592,11 +599,11 @@ Content-Type: application/json
 
 ### GET `/comment`
 
-查询当前访问者可见的评论。成功时 `data` 为 `Comment[]`，按发布时间、ID 倒序；匿名访问仅包含已发布文章的评论，带有效 token 时额外包含本人文章的评论，数据库 `ADMIN` 可见所有存在文章的评论。无对应文章的历史孤立评论不返回。
+查询当前访问者可见的评论。成功时 `data` 为 `Comment[]`，按发布时间、ID 倒序；匿名访问仅包含已发布且公开文章的评论，带有效 token 时额外包含本人文章的评论，数据库 `ADMIN` 可见所有存在文章的评论。无对应文章的历史孤立评论不返回。
 
 ### GET `/comment/{id}`
 
-按评论 ID 查询评论。评论及所属文章均需存在；文章已发布时公开可读，草稿/待审核文章的评论仅文章作者或数据库 `ADMIN` 可读，其他人按资源不存在处理。不存在或不可见时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
+按评论 ID 查询评论。评论及所属文章均需存在；文章已发布且公开时公开可读，私密/草稿/待审核文章的评论仅文章作者或数据库 `ADMIN` 可读，其他人按资源不存在处理。不存在或不可见时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
 
 ### GET `/comment/article/{articleId}`
 
@@ -606,7 +613,7 @@ Content-Type: application/json
 
 新增评论。需要 `Authorization: Bearer <token>`。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`；`userid` 始终使用 token 中的用户 ID，忽略请求体中的值。请求体必须包含非空白的 `articleid` 和 `content`，`parentid` 可选。
 
-- 所属文章必须存在且已发布（`state: "1"`），否则返回 HTTP 404/20001，包括作者自己的草稿/待审核文章。
+- 所属文章必须存在、已发布（`state: "1"`）且对当前用户可见，否则返回 HTTP 404/20001，包括作者自己的草稿/待审核文章。私密已发布文章仅文章作者和数据库 `ADMIN` 可新增评论或回复。
 - `parentid` 省略、null 或纯空白时保存为 null；非空值会去除首尾空白，父评论不存在或属于另一篇文章返回 HTTP 400/20001。
 - 评论保存与所属文章 `comment` 原子加 1 在同一事务内完成，失败不留下部分评论或计数；计数包含所有层级回复。
 
@@ -634,7 +641,7 @@ Content-Type: application/json
 
 - 首次点赞通常返回 `flag: true`、`code: 20000`、`message: "点赞成功"`。
 - 同一用户再次点赞返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
-- 评论不存在、所属文章不存在或尚未发布时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
+- 评论不存在、所属文章不存在、尚未发布或对当前用户不可见时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
 - 点赞关系写入 MySQL 的 `tb_comment_thumbup` 唯一关系表，计数在同一事务中原子递增；Redis 仅作为提交后的短期兼容缓存，Redis 不可用不改变数据库结果。
 - 旧版本 `thumbup_<userId>_<commentId>` Redis 记录会在首次请求时登记到关系表但不会再次增加计数；部署前必须先执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。
 - 数据库事务失败不会写入新的 Redis 缓存；关系表唯一键负责并发去重，避免 Redis 残留导致永久误判或重复计数。
@@ -764,21 +771,21 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 ## 当前集成限制
 
 - 已支持持久化登录会话、刷新轮换和当前会话退出；没有全设备退出或管理员撤销接口。过期会话/历史刷新摘要的有界清理已实现但默认关闭，须经运维确认保留策略、数据库权限和删除授权后开启，见 [admin-operations.md](admin-operations.md)。
-- 认证限流依赖用户服务 Redis，默认开启且故障关闭；当前自动化测试覆盖 MVC、模拟 Redis 和 H2 清理，真实 Redis Lua、多实例网络和 MySQL 清理验收尚未执行。固定窗口不是滑动窗口，窗口边界允许短时突发；不替代网关全局流量限制。
+- 认证限流依赖用户服务 Redis，默认开启且故障关闭；已验证 MVC、模拟 Redis、H2 清理和隔离 Redis Lua 固定窗口行为，本轮真实浏览器登录/刷新/退出也经过 Redis。多实例网络和真实 MySQL 清理验收尚未执行。固定窗口不是滑动窗口，窗口边界允许短时突发；不替代网关全局流量限制。
 - 文章和评论的内容修改/删除继续要求作者本人；数据库 `ADMIN` 用于标签管理、文章审核及读取非公开文章/其评论，不拥有代改文章内容或评论的权限。角色管理无公开接口，初始化流程见 [admin-operations.md](admin-operations.md)。
 - 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。已在隔离临时数据上通过真实 MySQL、Redis 和 HTTP 旧键迁移验收；生产部署仍需按目标环境复核连接、密钥和数据备份策略。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
-- 已有基础必填、非空白、非负计数和分页校验；评论已增加文章与父评论存在性和同文章归属校验。评论仍返回平铺数组，未增加评论树分页、审核或通知接口，正文最大长度尚未全面限制。
+- 已有基础必填、非空白、非负计数和分页校验；文章正文按转义纯文本显示，暂不提供 HTML 富文本渲染；评论已增加文章与父评论存在性和同文章归属校验。评论仍返回平铺数组，未增加评论树分页、审核或通知接口，正文最大长度尚未全面限制。
 - 评论计数从本版本起对新增/删除操作维护，不重算历史计数、不批量清理孤立评论。历史偏差须在另行核对和授权后处理。
 - 用户与文章写操作在事务内锁定目标行；资料更新不回写未修改的密码和统计字段，文章编辑/状态变更不覆盖浏览、点赞、评论计数。同一文章的详情读取、写入和评论操作可能因行锁等待。
-- 文章已有草稿/已发布/待审核状态与作者权限：新增即为草稿，`publish`/`unpublish`/`submit` 仅作者可调用，`approve`/`reject` 仅数据库 `ADMIN` 可调用，公开列表只返回已发布文章，草稿与待审核仅作者或管理员可见。作者仍可自行 `publish`，审核（`submit` → `approve`/`reject`）为可选路径；未授予任何真实账号管理员权限，未授权时审核接口对所有用户返回 403。
+- 文章已有草稿/已发布/待审核状态与作者权限：新增即为草稿，`publish`/`unpublish`/`submit` 仅作者可调用，`approve`/`reject` 仅数据库 `ADMIN` 可调用，公开列表只返回已发布且公开文章，私密、草稿与待审核仅作者或管理员可见。作者仍可自行 `publish`，审核（`submit` → `approve`/`reject`）为可选路径；未授予任何真实账号管理员权限，未授权时审核接口对所有用户返回 403。
 - 文章浏览量在 `GET /article/{articleId}` 读取已发布文章时累加（排除作者本人），没有按用户或 IP 去重，重复刷新、预取或爬虫会重复计数；草稿与待审核文章不计入。
 - 文章点赞使用唯一关系表 `tb_article_thumbup`（部署前执行 [mysql-article-thumbup-migration.sql](mysql-article-thumbup-migration.sql)，可重复执行）；历史 `tb_article.thumbup` 计数保留、不重算、不补关系，历史点赞用户仍可再次点赞。暂不支持取消点赞或点赞用户列表。
 - 关注使用唯一关系表 `tb_user_follow`（部署前执行 [mysql-user-follow-migration.sql](mysql-user-follow-migration.sql)，可重复执行）；`fanscount`/`followcount` 历史计数保留、不重算、不补关系。粉丝/关注列表只返回公开摘要（`id`、`nickname`、`avatar`、`sex`、`interest`、`personality`、`fanscount`、`followcount`），不含手机号、邮箱与生日。
 - 用户表已有手机号唯一约束（`uk_tb_user_mobile`，迁移见 [mysql-user-mobile-unique.sql](mysql-user-mobile-unique.sql)）：并发注册由数据库约束兜底并返回 `20005`。历史数据中已存在的重复手机号仍会让该手机号注册被拒绝，需要人工处理。后端尚未提供邮箱/短信验证与密码找回。
 - 资料接口只允许修改 `nickname`、`avatar`、`sex`、`birthday`、`email`、`interest`、`personality`；`mobile`、密码、计数与统计字段不可通过该接口修改。头像目前只是 URL 字符串，后端不提供文件上传。
 - 修改密码会撤销该用户的其他所有会话（其他设备需要重新登录，IM 连接随后关闭），发起修改的当前会话保持有效；仍没有全设备退出或管理员撤销接口。
-- 已通过 H2 完整登录/刷新/退出事务与 MVC 测试、IM 处理器撤销测试；此前会话核心的真实 MySQL 事务验收已通过。本轮未执行真实浏览器、多实例 IM 或全链路 MySQL/Redis 联调。
+- 已通过 H2 完整登录/刷新/退出事务与 MVC 测试、IM 处理器撤销测试；此前会话核心的真实 MySQL 事务验收已通过。2026-10-27 另通过 7 项真实 MySQL/Redis 测试及 Chromium 核心博客流程验收；本轮未验证多实例 IM、外部存储宕机或正式环境部署，详细范围由后端 `plan/progress.md` 记录。
 - 文章服务需要 MySQL 和 Redis；所有业务服务的具体连接配置属于部署环境，不写入前端代码或文档。
 - 升级前在目标库审核并执行附加认证表迁移；三个服务必须使用相同的认证表/用户表、JWT 密钥及一致的时钟。协调部署三个服务，禁止混用仍仅验签的旧实例；部署后旧客户端必须重登。迁移不自动执行，也不自动授予管理员。
 

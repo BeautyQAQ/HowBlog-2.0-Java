@@ -5,8 +5,10 @@ import com.liushao.entity.PageResult;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.dao.UserFollowDao;
 import com.liushao.user.pojo.User;
+import com.liushao.user.pojo.UserFollowId;
 import com.liushao.user.pojo.UserSummaryResponse;
 import com.liushao.web.InvalidRequestException;
+import com.liushao.web.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -21,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,6 +38,16 @@ class UserFollowServiceTest {
 
     private UserFollowService service() {
         return new UserFollowService(userDao, userFollowDao);
+    }
+
+    @Test
+    void followStatusUsesTheCurrentUsersRelationAndRejectsMissingTargets() {
+        when(userDao.existsById("bob")).thenReturn(true);
+        when(userFollowDao.existsById(new UserFollowId("alice", "bob"))).thenReturn(true);
+        assertTrue(service().isFollowing("alice", "bob"));
+        assertFalse(service().isFollowing("another", "bob"));
+        assertThrows(ResourceNotFoundException.class, () -> service().isFollowing("alice", "missing"));
+        verify(userFollowDao, never()).existsById(new UserFollowId("alice", "missing"));
     }
 
     @Test

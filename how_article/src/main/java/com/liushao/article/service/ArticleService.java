@@ -8,10 +8,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-
 import javax.persistence.criteria.Predicate;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ import com.liushao.web.ResourceNotFoundException;
 
 @Service
 public class ArticleService {
+    static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "istop", "updatetime", "createtime", "id");
 
     private final ArticleDao articleDao;
     private final IdWorker idWorker;
@@ -52,19 +54,19 @@ public class ArticleService {
     }
 
     public List<Article> findAll() {
-        List<Article> articles = articleDao.findByState(Article.STATE_PUBLISHED);
+        List<Article> articles = articleDao.findPublicArticles(DEFAULT_SORT);
         articles.forEach(this::populateLabels);
         return articles;
     }
 
     /**
-     * 按 ID 查询文章。已发布文章公开可见；草稿与待审核文章仅作者本人或管理员可见，
+     * 按 ID 查询文章。已发布且公开的文章公开可见；私密、草稿与待审核文章仅作者本人或管理员可见，
      * 其他访问者按资源不存在处理。非作者读取已发布文章时累加一次浏览量。
      */
     @Transactional
     public Article findById(String id, String viewerId) {
         Article article = articleDao.findByIdForUpdate(id).orElseThrow(ResourceNotFoundException::new);
-        boolean visible = Article.STATE_PUBLISHED.equals(article.getState())
+        boolean visible = ArticleVisibility.isPublic(article)
                 || (viewerId != null && (viewerId.equals(article.getUserid()) || isAdministrator(viewerId)));
         if (!visible) {
             throw new ResourceNotFoundException();
@@ -87,6 +89,7 @@ public class ArticleService {
         article.setId(idWorker.nextId() + "");
         article.setUserid(userId);
         article.setState(Article.STATE_DRAFT);
+        if (article.getIspublic() == null) article.setIspublic("1");
         article.setCreatetime(null);
         article.setUpdatetime(new Date());
         article.setIstop("0");
@@ -193,7 +196,9 @@ public class ArticleService {
     @Transactional
     public ThumbupResult thumbup(String id, String userId) {
         if (articleDao.findByIdForUpdate(id)
-                .filter(article -> Article.STATE_PUBLISHED.equals(article.getState()))
+                .filter(article -> Article.STATE_PUBLISHED.equals(article.getState())
+                        && (ArticleVisibility.isPublic(article) || userId.equals(article.getUserid())
+                        || isAdministrator(userId)))
                 .isEmpty()) {
             return ThumbupResult.NOT_FOUND;
         }
@@ -266,7 +271,8 @@ public class ArticleService {
                         : root.get("id").in(matchingArticleIds));
             }
             if (!administrator) {
-                Predicate published = builder.equal(root.get("state"), Article.STATE_PUBLISHED);
+                Predicate published = builder.and(builder.equal(root.get("state"), Article.STATE_PUBLISHED),
+                        builder.or(builder.isNull(root.get("ispublic")), builder.equal(root.get("ispublic"), "1")));
                 if (viewerId == null) {
                     predicates.add(published);
                 } else {
@@ -275,7 +281,7 @@ public class ArticleService {
             }
             return builder.and(predicates.toArray(new Predicate[0]));
         };
-        Page<Article> result = articleDao.findAll(specification, PageRequest.of(page - 1, size));
+        Page<Article> result = articleDao.findAll(specification, PageRequest.of(page - 1, size, DEFAULT_SORT));
         result.forEach(this::populateLabels);
         return result;
     }

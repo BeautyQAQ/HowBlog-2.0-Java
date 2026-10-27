@@ -236,10 +236,27 @@ class UserControllerTest {
 
     @Test
     void followEndpointsRequireAuthentication() throws Exception {
+        mvc.perform(get("/user/follow/bob")).andExpect(status().isUnauthorized());
         mvc.perform(put("/user/follow/bob")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(20003));
         mvc.perform(delete("/user/follow/bob")).andExpect(status().isUnauthorized());
         verifyNoInteractions(userFollowDao);
+    }
+
+    @Test
+    void followStatusReturnsCurrentRelationAndMissingTargetWithoutWriting() throws Exception {
+        when(userDao.existsById("bob")).thenReturn(true);
+        when(userFollowDao.existsById(new com.liushao.user.pojo.UserFollowId("alice", "bob"))).thenReturn(true);
+        mvc.perform(get("/user/follow/bob").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.following").value(true));
+        when(userFollowDao.existsById(new com.liushao.user.pojo.UserFollowId("alice", "bob"))).thenReturn(false);
+        mvc.perform(get("/user/follow/bob").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.following").value(false));
+        mvc.perform(get("/user/follow/missing").header("Authorization", authorization()))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001));
+        verify(userFollowDao, never()).insertIfAbsent(any(), any());
+        verify(userFollowDao, never()).deleteRelation(any(), any());
     }
 
     @Test

@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "7.0.0",
-  "revision": 22,
+  "contractVersion": "8.0.0",
+  "revision": 23,
   "updatedAt": "2026-10-27",
-  "latestChangeId": "API-20261027-022",
+  "latestChangeId": "API-20261027-023",
   "latestChangeType": "fix",
   "breaking": true,
   "requiresFrontendAction": true,
   "changedAreas": [
-    "password-validation",
-    "user-concurrency",
-    "article-concurrency",
-    "comments"
+    "article-content-rendering",
+    "article-visibility",
+    "article-pagination",
+    "user-follow-status"
   ],
   "contractFile": "docs/frontend-api.md",
   "changelogFile": "docs/frontend-api-changelog.md",

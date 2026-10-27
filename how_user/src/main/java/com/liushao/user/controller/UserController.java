@@ -1,7 +1,15 @@
 package com.liushao.user.controller;
 
+import java.util.Map;
+import javax.servlet.http.HttpServletResponse;
+import javax.validation.Valid;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
 import com.liushao.auth.AuthenticatedUser;
 import com.liushao.auth.CurrentUserContext;
+import com.liushao.auth.RefreshCredentialEndpoint;
 import com.liushao.auth.RequireAuthentication;
 import com.liushao.entity.PageResult;
 import com.liushao.entity.Result;
@@ -11,17 +19,12 @@ import com.liushao.user.pojo.LoginRequest;
 import com.liushao.user.pojo.LoginResponse;
 import com.liushao.user.pojo.ProfileResponse;
 import com.liushao.user.pojo.ProfileUpdateRequest;
+import com.liushao.user.pojo.RefreshRequest;
 import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.pojo.UserSummaryResponse;
-import com.liushao.user.service.UserService;
-import com.liushao.user.service.UserFollowService;
 import com.liushao.user.service.AuthRateLimiter;
-import com.liushao.user.pojo.RefreshRequest;
-import com.liushao.auth.RefreshCredentialEndpoint;
-import javax.validation.Valid;
-import javax.servlet.http.HttpServletResponse;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import com.liushao.user.service.UserFollowService;
+import com.liushao.user.service.UserService;
 
 @RestController
 @RequestMapping("user")
@@ -96,6 +99,14 @@ public class UserController {
             case INVALID -> ResponseEntity.badRequest()
                     .body(new Result(false, StatusCode.ERROR, "请求格式或参数不正确"));
         };
+    }
+
+    @GetMapping("follow/{userId}")
+    @RequireAuthentication
+    public ResponseEntity<Result> followStatus(@PathVariable String userId) {
+        boolean following = userFollowService.isFollowing(CurrentUserContext.require().getUserId(), userId);
+        return ResponseEntity.ok().header("Cache-Control", "no-store")
+                .body(new Result(true, StatusCode.OK, "查询成功", Map.of("following", following)));
     }
 
     @PutMapping("follow/{userId}")

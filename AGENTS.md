@@ -61,16 +61,17 @@ mvn -pl how_article -am compile
 # 运行指定模块测试及其依赖
 mvn -pl how_article -am test
 
-# 启动独立服务
-mvn -pl how_user -am spring-boot:run
-mvn -pl how_base -am spring-boot:run
-mvn -pl how_article -am spring-boot:run
+# 先打包，再在独立终端启动各服务
+mvn package -DskipTests
+java -jar how_user/target/how_user-1.0-SNAPSHOT.jar
+java -jar how_base/target/how_base-1.0-SNAPSHOT.jar
+java -jar how_article/target/how_article-1.0-SNAPSHOT.jar
 
 # 打包时跳过测试
 mvn clean package -DskipTests
 ```
 
-修改后至少执行与变更范围匹配的 Maven 编译或测试。新增或修改业务行为时，应补充 JUnit 5 测试；提交前运行 `mvn test`。当前仓库没有现有测试源码，无法用测试通过替代对 MySQL、MongoDB、Redis 等外部依赖的运行验证。
+修改后至少执行与变更范围匹配的 Maven 编译或测试。新增或修改业务行为时，应补充 JUnit 5 测试；提交前运行 `mvn test`。当前仓库已有 JUnit 5、MVC 与 H2/JPA 测试，以及显式启用的真实 MySQL/Redis 验收；默认跳过的外部测试不代表真实环境已验证。持久化已收敛为 MySQL/JPA，Redis 用于认证限流及评论点赞兼容缓存。
 
 ## 代码组织与风格
 
@@ -85,7 +86,6 @@ com.liushao.<module>/
 ├── dao          # Spring Data JPA Repository 接口
 ├── exception    # 全局异常处理
 ├── pojo         # 持久化或传输对象
-├── repository   # MongoDB Repository
 ├── service      # 业务服务
 └── im           # 即时通讯实现（仅 how_user）
 ```
@@ -134,18 +134,18 @@ com.liushao.<module>/
 
 前端 agent 没有后端仓库权限时，不得把 Git diff 作为同步机制。后端需要把这三个文件一起发布到前端 agent 可访问的共享位置，例如前端仓库、共享文档仓库、CI 构建产物或内部只读 URL。前端 agent 的固定读取流程是：先读 `frontend-api-status.json`，比较本地已处理的 revision；发现 revision 变大后，读取 changelog 对应条目，再读取 `frontend-api.md` 的当前契约并保存新的 revision。如果没有任何共享文件、构建产物或 URL，前端 agent 无法知道后端发生了变化，必须先建立发布渠道。
 
-当前基线为 revision `1`，详见 `docs/frontend-api-changelog.md`。
+当前契约以 `docs/frontend-api-status.json` 为准；revision 23 收口私密访问、正文纯文本、分页排序与关注状态查询，详见 `docs/frontend-api-changelog.md`。
 
 ### 数据访问
 
 - MySQL 持久化使用 Spring Data JPA；实体使用 `javax.persistence`，Repository 继续沿用当前 DAO 命名。
 - 评论数据使用 JPA；评论点赞状态使用 Redis。点赞计数必须使用数据库端原子更新，并考虑外部存储不可用、重复操作和并发更新。
-- 修改实体字段、查询条件或持久化逻辑时，同步检查对应数据库或集合结构；本项目未提供完整建表脚本，不能臆造或执行破坏性 DDL。
+- 修改实体字段、查询条件或持久化逻辑时，同步检查对应数据库或集合结构；建表与附加迁移脚本位于 `docs/mysql-*.sql`；不得把新库初始化当作已有库升级，不得臆造或执行破坏性 DDL。
 - ID 和分页相关实现应复用 `how_common` 的既有实体与工具，避免各模块复制实现。
 
 ### 即时通讯
 
-- `how_user` 的 WebSocket IM 仅适合开发测试：客户端 URL 中的 `user` 参数只是展示身份，消息仅保存在进程内存。
+- `how_user` 的 WebSocket IM 仅适合开发测试：握手和收发使用访问 token 与 MySQL 会话校验，URL `user` 参数不用于身份识别；消息仅保存在进程内存。
 - 不应将该身份识别、消息可靠性或重启后的消息保留视为生产级能力。涉及生产化改造时，应先设计鉴权、持久化、分布式广播和限流方案。
 
 ## 配置与安全
@@ -159,8 +159,8 @@ com.liushao.<module>/
 
 - Spring Boot 固定为 `2.7.18`，JPA 使用 `javax.persistence` 命名空间。升级至 Spring Boot 3.x 时必须整体迁移至 `jakarta.persistence`；禁止只调整 Spring Boot 版本。
 - MySQL Connector/J 8 使用 `com.mysql.cj.jdbc.Driver`。保持配置与实际驱动版本一致。
-- 当前评论点赞逻辑使用固定用户 ID `123`，在接入真实登录态前不能将其视为用户级鉴权。
-- `CommentController` 中按评论 ID 与按文章 ID 查询存在同形路径风险；修改评论接口时先明确路径与参数语义，避免引入冲突映射。
+- 评论点赞使用当前 token 用户 ID、MySQL 唯一关系与原子计数；Redis 仅为提交后的兼容缓存，不是鉴权或最终去重依据。
+- 评论按文章查询固定为 `/comment/article/{articleId}`，按评论查询为 `/comment/{id}`；保持路径语义清晰。
 
 ## 提交前检查
 

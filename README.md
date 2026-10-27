@@ -37,7 +37,7 @@ HowBlog-2.0-Java/
 开始前请准备：
 
 - JDK 21，并正确设置 `JAVA_HOME`
-- Maven 3.9 或更高版本
+- Maven 3.8.1 或更高版本（本轮验证使用 3.8.1）
 - MySQL 8.x
 - Redis
 
@@ -112,25 +112,22 @@ how_user      SUCCESS
 
 ## 启动服务
 
-可以分别进入模块目录启动：
+在项目根目录先打包全部模块，再分别在三个终端运行可执行 JAR。三个服务使用相同的 `HOW_AUTH_JWT_SECRET`，并确认连接的是可安全使用的数据库和 Redis：
 
 ```bash
-mvn -pl how_user spring-boot:run
-mvn -pl how_base spring-boot:run
-mvn -pl how_article spring-boot:run
+mvn package -DskipTests
 ```
 
-也可以直接运行对应启动类：
-
 ```bash
-java -cp how_user/target/classes com.liushao.user.UserApplication
-java -cp how_base/target/classes com.liushao.base.BaseApplication
-java -cp how_article/target/classes com.liushao.article.ArticleApplication
+java -jar how_user/target/how_user-1.0-SNAPSHOT.jar
+java -jar how_base/target/how_base-1.0-SNAPSHOT.jar
+java -jar how_article/target/how_article-1.0-SNAPSHOT.jar
 ```
 
-实际运行时推荐使用 Maven 的 `spring-boot:run`，因为它会自动处理模块依赖和运行时 classpath：
+开发时也可以先安装模块依赖，然后对单个业务模块执行 `spring-boot:run`：
 
 ```bash
+mvn install -DskipTests
 mvn -pl how_user spring-boot:run
 ```
 
@@ -149,6 +146,7 @@ mvn -pl how_user spring-boot:run
 | `POST` | `/user/password` | 修改密码，需要 Bearer JWT，成功撤销其他会话 |
 | `POST` | `/user/refresh` | 刷新访问与刷新凭据 |
 | `POST` | `/user/logout` | 退出当前会话 |
+| `GET` | `/user/follow/{userId}` | 查询当前关注状态，需要 Bearer JWT |
 | `PUT` | `/user/follow/{userId}` | 关注用户，需要 Bearer JWT |
 | `DELETE` | `/user/follow/{userId}` | 取消关注，需要 Bearer JWT |
 | `GET` | `/user/{userId}/fans/{page}/{size}` | 粉丝列表（公开） |
@@ -209,7 +207,7 @@ WebSocket 地址为 `ws://localhost:9008/im?token=<access-token>`，HTTPS 环境
 {"type":"message","to":"bob","content":"你好，Bob"}
 ```
 
-当前支持在线状态、房间广播、全局广播和单聊。消息只保存在服务进程内存中，服务重启后丢失；生产环境建议将会话广播接入 Redis，并增加登录态校验、限流、消息持久化和离线消息。音视频通话、文件传输、好友/群组管理不属于当前自建 IM 的范围。
+当前支持在线状态、房间广播、全局广播和单聊。消息只保存在服务进程内存中，服务重启后丢失；生产环境建议将会话广播接入 Redis，并增加消息限流、消息持久化和离线消息；当前已包含握手与持续会话校验。音视频通话、文件传输、好友/群组管理不属于当前自建 IM 的范围。
 
 ## 开发说明
 
@@ -217,17 +215,24 @@ WebSocket 地址为 `ws://localhost:9008/im?token=<access-token>`，HTTPS 环境
 - `how_common` 不单独启动，只作为公共依赖被其他模块引用。
 - 数据访问使用 Spring Data JPA，当前 Spring Boot 2.7 使用 `javax.persistence`；升级 Spring Boot 3.x 时需要同步迁移至 `jakarta.persistence`。
 - 配置文件中的 MySQL 驱动类使用 Connector/J 8 的 `com.mysql.cj.jdbc.Driver`。
-- 当前访问令牌由 `how_user` 签发，其他服务使用同一 `HOW_AUTH_JWT_SECRET` 校验；暂无刷新、退出或主动撤销接口。
+- 当前访问令牌由 `how_user` 签发，其他服务使用同一 `HOW_AUTH_JWT_SECRET` 校验；刷新凭据单次轮换、退出撤销当前会话，修改密码撤销其他会话；三个服务和 IM 都检查数据库会话。
 - 评论点赞已按 token 用户进行去重；MySQL 唯一关系表与原子计数负责最终一致性，Redis 仅保留提交后的短期兼容缓存。部署前需执行 `docs/mysql-thumbup-migration.sql`；IM 多实例广播仍未完成。
 - 文章标签使用 `tb_article_label` 唯一关系表，关系变更与 `tb_label.count` 在同一事务内维护；部署前需执行 `docs/mysql-article-label-migration.sql`，不会重算历史标签计数。
 - 当前 IM 使用 token 对应的用户 ID 作为身份，消息仍保存在进程内存中，仅适合开发测试。
 
 ## 构建验证
 
-本项目已在 JDK 21、Maven 3.9.6 环境执行以下命令验证：
+2026-10-27 已在 JDK 21、Maven 3.8.1 环境执行：
 
 ```bash
-mvn clean -DskipTests compile
+mvn clean test
+mvn package -DskipTests
 ```
 
-结果为 `BUILD SUCCESS`。当前已包含认证、JWT、WebSocket 握手和评论点赞单元测试；测试不替代对外部 MySQL、Redis 配置的运行验证。
+均为 `BUILD SUCCESS`。默认测试 325 项（315 通过、10 项外部验收跳过）；另显式执行 7 项真实 MySQL/Redis 验收全部通过。前端测试、生产构建和 Chromium 核心流程验收通过，临时数据已清理，原有记录数及统计值与验收前一致。具体范围见 [plan/progress.md](plan/progress.md)。
+
+## 核心功能收尾（revision 23）
+
+正文按转义纯文本保留换行显示；私密文章及其评论仅文章作者/管理员可读，发布不会解除私密限制。文章列表和分页由数据库统一按置顶、更新时间、发布时间、ID 倒序，前端沿用返回顺序。文章详情通过 `GET /user/follow/{userId}` 恢复关注状态，查询失败可重试。
+
+当前契约三件套在 `docs/`，前端同目录有同步副本。验收记录见 `plan/progress.md`；本轮不需要新增 DDL，不批量转换历史正文或统计。评论树分页、通知、上传、密码找回和 IM 多实例留作后续增强。

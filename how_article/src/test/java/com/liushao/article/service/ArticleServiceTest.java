@@ -18,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 import com.liushao.article.dao.ArticleDao;
@@ -459,7 +460,7 @@ class ArticleServiceTest {
         service().search(Map.of("labelIds", List.of("java", "spring")), 1, 10, null);
 
         verify(articleLabelDao).findArticleIdsWithAllLabels(List.of("java", "spring"), 2);
-        verify(articleDao).findAll(any(Specification.class), eq(PageRequest.of(0, 10)));
+        verify(articleDao).findAll(any(Specification.class), eq(PageRequest.of(0, 10, ArticleService.DEFAULT_SORT)));
     }
 
     private record SearchCapture(Predicate captured, Predicate published, Predicate ownerClause) {
@@ -475,10 +476,20 @@ class ArticleServiceTest {
         CriteriaBuilder builder = mock(CriteriaBuilder.class);
         Path statePath = mock(Path.class);
         Path userPath = mock(Path.class);
+        Path visibilityPath = mock(Path.class);
+        Predicate statePublished = mock(Predicate.class);
+        Predicate legacyPublic = mock(Predicate.class);
+        Predicate explicitlyPublic = mock(Predicate.class);
+        Predicate publicFlag = mock(Predicate.class);
         Predicate published = mock(Predicate.class);
         Predicate ownerClause = null;
         when(root.get("state")).thenReturn(statePath);
-        when(builder.equal(statePath, Article.STATE_PUBLISHED)).thenReturn(published);
+        when(builder.equal(statePath, Article.STATE_PUBLISHED)).thenReturn(statePublished);
+        when(root.get("ispublic")).thenReturn(visibilityPath);
+        when(builder.isNull(visibilityPath)).thenReturn(legacyPublic);
+        when(builder.equal(visibilityPath, "1")).thenReturn(explicitlyPublic);
+        when(builder.or(legacyPublic, explicitlyPublic)).thenReturn(publicFlag);
+        when(builder.and(statePublished, publicFlag)).thenReturn(published);
         if (viewerId != null) {
             when(root.get("userid")).thenReturn(userPath);
             Predicate owner = mock(Predicate.class);

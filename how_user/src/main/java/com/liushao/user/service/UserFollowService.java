@@ -1,15 +1,18 @@
 package com.liushao.user.service;
 
-import com.liushao.entity.PageResult;
-import com.liushao.user.dao.UserDao;
-import com.liushao.user.dao.UserFollowDao;
-import com.liushao.user.pojo.User;
-import com.liushao.user.pojo.UserSummaryResponse;
-import com.liushao.web.InvalidRequestException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.liushao.entity.PageResult;
+import com.liushao.user.dao.UserDao;
+import com.liushao.user.dao.UserFollowDao;
+import com.liushao.user.pojo.User;
+import com.liushao.user.pojo.UserFollowId;
+import com.liushao.user.pojo.UserSummaryResponse;
+import com.liushao.web.InvalidRequestException;
+import com.liushao.web.ResourceNotFoundException;
 
 /**
  * 用户关注/取关与粉丝、关注列表。
@@ -23,6 +26,13 @@ public class UserFollowService {
     public UserFollowService(UserDao userDao, UserFollowDao userFollowDao) {
         this.userDao = userDao;
         this.userFollowDao = userFollowDao;
+    }
+
+    public boolean isFollowing(String followerId, String followeeId) {
+        if (!userDao.existsById(followeeId)) {
+            throw new ResourceNotFoundException();
+        }
+        return userFollowDao.existsById(new UserFollowId(followerId, followeeId));
     }
 
     /**

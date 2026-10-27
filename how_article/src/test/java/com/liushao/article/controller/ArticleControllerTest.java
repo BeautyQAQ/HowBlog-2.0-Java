@@ -13,6 +13,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -170,10 +171,10 @@ class ArticleControllerTest {
     @ParameterizedTest
     @ValueSource(ints = {1, 100})
     void acceptsPaginationBoundaries(int size) throws Exception {
-        when(articleDao.findAll(any(Specification.class), eq(PageRequest.of(0, size)))).thenReturn(Page.empty());
+        when(articleDao.findAll(any(Specification.class), eq(PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "istop", "updatetime", "createtime", "id"))))).thenReturn(Page.empty());
         mvc.perform(post("/article/search/1/" + size).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(0));
-        verify(articleDao).findAll(any(Specification.class), eq(PageRequest.of(0, size)));
+        verify(articleDao).findAll(any(Specification.class), eq(PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "istop", "updatetime", "createtime", "id"))));
     }
 
     @ParameterizedTest
@@ -212,7 +213,7 @@ class ArticleControllerTest {
 
     @Test
     void hidesUnexpectedFailureDetailsAndClearsIdentity() throws Exception {
-        when(articleDao.findByState(Article.STATE_PUBLISHED)).thenThrow(new IllegalStateException("internal database detail"));
+        when(articleDao.findPublicArticles(any(Sort.class))).thenThrow(new IllegalStateException("internal database detail"));
         mvc.perform(get("/article").header("Authorization", authorization()))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.flag").value(false))
                 .andExpect(jsonPath("$.code").value(20001))
@@ -301,9 +302,9 @@ class ArticleControllerTest {
 
     @Test
     void listsOnlyPublishedArticles() throws Exception {
-        when(articleDao.findByState(Article.STATE_PUBLISHED)).thenReturn(List.of());
+        when(articleDao.findPublicArticles(any(Sort.class))).thenReturn(List.of());
         mvc.perform(get("/article")).andExpect(status().isOk()).andExpect(jsonPath("$.data").isArray());
-        verify(articleDao).findByState(Article.STATE_PUBLISHED);
+        verify(articleDao).findPublicArticles(any(Sort.class));
         verify(articleDao, never()).findAll();
     }
 
@@ -440,7 +441,7 @@ class ArticleControllerTest {
         when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
         when(articleLabelDao.findArticleIdsWithAllLabels(List.of("java", "spring"), 2))
                 .thenReturn(List.of("article-one"));
-        when(articleDao.findAll(any(Specification.class), eq(PageRequest.of(0, 10)))).thenReturn(Page.empty());
+        when(articleDao.findAll(any(Specification.class), eq(PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "istop", "updatetime", "createtime", "id"))))).thenReturn(Page.empty());
 
         mvc.perform(post("/article/search/1/10").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"labelIds\":[\"java\",\"spring\"]}"))
@@ -535,6 +536,19 @@ class ArticleControllerTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
         verify(commentThumbupDao).deleteByCommentIds(List.of("root", "reply"));
         verify(articleDao).decrementComment("one", 2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "2", "private"})
+    void rejectsInvalidArticleVisibility(String visibility) throws Exception {
+        mvc.perform(post("/article").header("Authorization", authorization())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"title\",\"content\":\"body\",\"ispublic\":\"" + visibility + "\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
+        mvc.perform(put("/article/one").header("Authorization", authorization())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"ispublic\":\"" + visibility + "\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(articleDao);
     }
 
     private String authorization() {
