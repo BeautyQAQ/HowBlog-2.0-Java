@@ -5,6 +5,8 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,8 +17,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.User;
 
@@ -93,6 +93,24 @@ public class UserPasswordTest {
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
         }
         assertTrue(passwordEncoder.matches("test-password", users.findById(userId).orElseThrow().getPassword()));
+    }
+
+    @Test
+    void newPasswordHonorsUtf8ByteBoundary() throws Exception {
+        String token = login("test-password").path("token").asText();
+        String boundary = "汉".repeat(24);
+        mvc.perform(post("/user/password").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("oldPassword", "test-password", "newPassword", boundary + "a"))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
+
+        mvc.perform(post("/user/password").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("oldPassword", "test-password", "newPassword", boundary))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+
+        assertTrue(passwordEncoder.matches(boundary, users.findById(userId).orElseThrow().getPassword()));
+        assertNotNull(login(boundary).get("token"));
     }
 
     @Test

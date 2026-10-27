@@ -2,15 +2,15 @@ package com.liushao.user.pojo;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.Size;
+
+import com.liushao.user.validation.ValidPassword;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ChangePasswordRequest {
     @NotBlank
     private String oldPassword;
 
-    @NotBlank
-    @Size(min = 8, max = 64)
+    @ValidPassword
     private String newPassword;
 
     public String getOldPassword() {

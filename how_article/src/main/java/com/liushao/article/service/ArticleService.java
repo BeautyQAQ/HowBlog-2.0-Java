@@ -1,20 +1,5 @@
 package com.liushao.article.service;
 
-import com.liushao.article.dao.ArticleDao;
-import com.liushao.article.dao.ArticleLabelDao;
-import com.liushao.article.dao.ArticleThumbupDao;
-import com.liushao.article.dao.UserRoleDao;
-import com.liushao.article.pojo.Article;
-import com.liushao.util.IdWorker;
-import com.liushao.web.ForbiddenException;
-import com.liushao.web.InvalidRequestException;
-import com.liushao.web.ResourceNotFoundException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.jpa.domain.Specification;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -23,7 +8,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+
 import javax.persistence.criteria.Predicate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.liushao.article.dao.ArticleDao;
+import com.liushao.article.dao.ArticleLabelDao;
+import com.liushao.article.dao.ArticleThumbupDao;
+import com.liushao.article.dao.CommentDao;
+import com.liushao.article.dao.CommentThumbupDao;
+import com.liushao.article.dao.UserRoleDao;
+import com.liushao.article.pojo.Article;
+import com.liushao.util.IdWorker;
+import com.liushao.web.ForbiddenException;
+import com.liushao.web.InvalidRequestException;
+import com.liushao.web.ResourceNotFoundException;
 
 @Service
 public class ArticleService {
@@ -33,14 +36,19 @@ public class ArticleService {
     private final UserRoleDao userRoleDao;
     private final ArticleThumbupDao articleThumbupDao;
     private final ArticleLabelDao articleLabelDao;
+    private final CommentDao commentDao;
+    private final CommentThumbupDao commentThumbupDao;
 
     public ArticleService(ArticleDao articleDao, IdWorker idWorker, UserRoleDao userRoleDao,
-                          ArticleThumbupDao articleThumbupDao, ArticleLabelDao articleLabelDao) {
+                          ArticleThumbupDao articleThumbupDao, ArticleLabelDao articleLabelDao,
+                          CommentDao commentDao, CommentThumbupDao commentThumbupDao) {
         this.articleDao = articleDao;
         this.idWorker = idWorker;
         this.userRoleDao = userRoleDao;
         this.articleThumbupDao = articleThumbupDao;
         this.articleLabelDao = articleLabelDao;
+        this.commentDao = commentDao;
+        this.commentThumbupDao = commentThumbupDao;
     }
 
     public List<Article> findAll() {
@@ -53,8 +61,9 @@ public class ArticleService {
      * 按 ID 查询文章。已发布文章公开可见；草稿与待审核文章仅作者本人或管理员可见，
      * 其他访问者按资源不存在处理。非作者读取已发布文章时累加一次浏览量。
      */
+    @Transactional
     public Article findById(String id, String viewerId) {
-        Article article = articleDao.findById(id).orElseThrow(ResourceNotFoundException::new);
+        Article article = articleDao.findByIdForUpdate(id).orElseThrow(ResourceNotFoundException::new);
         boolean visible = Article.STATE_PUBLISHED.equals(article.getState())
                 || (viewerId != null && (viewerId.equals(article.getUserid()) || isAdministrator(viewerId)));
         if (!visible) {
@@ -93,8 +102,9 @@ public class ArticleService {
     /**
      * 发布草稿：状态置为已发布，首次发布记录发布时间。
      */
+    @Transactional
     public boolean publish(String id, String userId) {
-        return articleDao.findById(id)
+        return articleDao.findByIdForUpdate(id)
                 .filter(article -> userId.equals(article.getUserid()))
                 .map(article -> {
                     if (article.getCreatetime() == null) {
@@ -110,8 +120,9 @@ public class ArticleService {
     /**
      * 下架文章：状态退回草稿，保留发布时间。
      */
+    @Transactional
     public boolean unpublish(String id, String userId) {
-        return articleDao.findById(id)
+        return articleDao.findByIdForUpdate(id)
                 .filter(article -> userId.equals(article.getUserid()))
                 .map(article -> {
                     article.setState(Article.STATE_DRAFT);
@@ -124,8 +135,9 @@ public class ArticleService {
     /**
      * 提交审核：作者将草稿提交，等待管理员处理。
      */
+    @Transactional
     public TransitionResult submit(String id, String userId) {
-        return articleDao.findById(id)
+        return articleDao.findByIdForUpdate(id)
                 .filter(article -> userId.equals(article.getUserid()))
                 .map(article -> {
                     if (!Article.STATE_DRAFT.equals(article.getState())) {
@@ -141,6 +153,7 @@ public class ArticleService {
     /**
      * 审核通过：管理员将待审核文章置为已发布。
      */
+    @Transactional
     public TransitionResult approve(String id, String userId) {
         requireAdministrator(userId);
         return review(id, true);
@@ -149,13 +162,14 @@ public class ArticleService {
     /**
      * 审核驳回：管理员将待审核文章退回草稿。
      */
+    @Transactional
     public TransitionResult reject(String id, String userId) {
         requireAdministrator(userId);
         return review(id, false);
     }
 
     private TransitionResult review(String id, boolean approve) {
-        Article article = articleDao.findById(id).orElseThrow(ResourceNotFoundException::new);
+        Article article = articleDao.findByIdForUpdate(id).orElseThrow(ResourceNotFoundException::new);
         if (!Article.STATE_PENDING.equals(article.getState())) {
             return TransitionResult.INVALID_STATE;
         }
@@ -196,7 +210,7 @@ public class ArticleService {
     @Transactional
     public boolean update(Article article, String userId) {
         List<String> labelIds = normalizeLabelIds(article.getLabelIds());
-        return articleDao.findById(article.getId())
+        return articleDao.findByIdForUpdate(article.getId())
                 .filter(existing -> userId.equals(existing.getUserid()))
                 .map(existing -> {
             if (article.getColumnid() != null) existing.setColumnid(article.getColumnid());
@@ -218,9 +232,11 @@ public class ArticleService {
 
     @Transactional
     public boolean delete(String id, String userId) {
-        return articleDao.findById(id)
+        return articleDao.findByIdForUpdate(id)
                 .filter(article -> userId.equals(article.getUserid()))
                 .map(article -> {
+                    commentThumbupDao.deleteByArticleId(id);
+                    commentDao.deleteByArticleidBulk(id);
                     replaceLabels(id, List.of());
                     articleDao.delete(article);
                     return true;
@@ -269,7 +285,7 @@ public class ArticleService {
     }
 
     private void replaceLabels(String articleId, List<String> labelIds) {
-        List<String> existingLabelIds = articleLabelDao.findLabelIdsByArticleId(articleId);
+        List<String> existingLabelIds = articleLabelDao.findLabelIdsByArticleIdForUpdate(articleId);
         if (existingLabelIds == null) {
             existingLabelIds = List.of();
         }
@@ -281,7 +297,9 @@ public class ArticleService {
         }
         articleLabelDao.deleteByArticleId(articleId);
         if (!labelIds.isEmpty()) {
-            articleLabelDao.insertExistingLabels(articleId, labelIds);
+            if (articleLabelDao.insertExistingLabels(articleId, labelIds) != labelIds.size()) {
+                throw new InvalidRequestException();
+            }
             articleLabelDao.incrementLabelCounts(labelIds);
         }
     }

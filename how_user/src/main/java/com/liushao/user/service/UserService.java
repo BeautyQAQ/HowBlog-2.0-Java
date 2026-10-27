@@ -1,5 +1,13 @@
 package com.liushao.user.service;
 
+import java.util.Date;
+import java.util.List;
+
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
 import com.liushao.auth.JwtTokenService;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.ChangePasswordRequest;
@@ -9,16 +17,8 @@ import com.liushao.user.pojo.ProfileResponse;
 import com.liushao.user.pojo.ProfileUpdateRequest;
 import com.liushao.user.pojo.RegisterRequest;
 import com.liushao.user.pojo.User;
+import com.liushao.user.validation.PasswordValidator;
 import com.liushao.util.IdWorker;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Date;
-import java.util.List;
 
 @Service
 public class UserService {
@@ -45,18 +45,18 @@ public class UserService {
             return null;
         }
 
-        List<User> users = userDao.findAllByMobile(loginRequest.getMobile());
+        List<User> users = userDao.findAllByMobileForUpdate(loginRequest.getMobile());
         if (users == null || users.size() != 1) {
             return null;
         }
 
         User user = users.get(0);
-        if (!passwordsMatch(loginRequest.getPassword(), user.getPassword())) {
+        if (!PasswordCredentials.matches(loginRequest.getPassword(), user.getPassword(), passwordEncoder)) {
             return null;
         }
 
-        if (!isBcryptHash(user.getPassword())) {
-            user.setPassword(passwordEncoder.encode(loginRequest.getPassword()));
+        if (!PasswordCredentials.isEncoded(user.getPassword())) {
+            user.setPassword(PasswordCredentials.upgradeLegacy(loginRequest.getPassword(), passwordEncoder));
             userDao.save(user);
         }
 
@@ -69,9 +69,7 @@ public class UserService {
         if (request == null
                 || !StringUtils.hasText(request.getMobile())
                 || !request.getMobile().matches("1\\d{10}")
-                || !StringUtils.hasText(request.getPassword())
-                || request.getPassword().length() < 8
-                || request.getPassword().length() > 64) {
+                || !PasswordValidator.isValidNewPassword(request.getPassword())) {
             return RegisterResult.INVALID;
         }
 
@@ -103,16 +101,14 @@ public class UserService {
         // 与 ChangePasswordRequest 注解保持同一规则，防止绕过控制器直接调用
         if (request == null
                 || !StringUtils.hasText(request.getOldPassword())
-                || !StringUtils.hasText(request.getNewPassword())
-                || request.getNewPassword().length() < 8
-                || request.getNewPassword().length() > 64) {
+                || !PasswordValidator.isValidNewPassword(request.getNewPassword())) {
             return PasswordChangeResult.INVALID;
         }
-        User user = userDao.findById(userId).orElse(null);
+        User user = userDao.findByIdForUpdate(userId).orElse(null);
         if (user == null) {
             return null;
         }
-        if (!passwordsMatch(request.getOldPassword(), user.getPassword())) {
+        if (!PasswordCredentials.matches(request.getOldPassword(), user.getPassword(), passwordEncoder)) {
             return PasswordChangeResult.WRONG_PASSWORD;
         }
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
@@ -132,7 +128,7 @@ public class UserService {
 
     @Transactional(timeout = 15)
     public ProfileResponse updateProfile(String userId, ProfileUpdateRequest request) {
-        return userDao.findById(userId).map(existing -> {
+        return userDao.findByIdForUpdate(userId).map(existing -> {
             if (request.getNickname() != null) existing.setNickname(request.getNickname().strip());
             if (request.getAvatar() != null) existing.setAvatar(request.getAvatar().strip());
             if (request.getSex() != null) existing.setSex(request.getSex().strip());
@@ -173,26 +169,4 @@ public class UserService {
         return response;
     }
 
-    private boolean passwordsMatch(String rawPassword, String storedPassword) {
-        if (!StringUtils.hasText(storedPassword)) {
-            return false;
-        }
-        if (!isBcryptHash(storedPassword)) {
-            return MessageDigest.isEqual(
-                    rawPassword.getBytes(StandardCharsets.UTF_8),
-                    storedPassword.getBytes(StandardCharsets.UTF_8)
-            );
-        }
-        try {
-            return passwordEncoder.matches(rawPassword, storedPassword);
-        } catch (IllegalArgumentException exception) {
-            return false;
-        }
-    }
-
-    private boolean isBcryptHash(String password) {
-        return password.startsWith("$2a$")
-                || password.startsWith("$2b$")
-                || password.startsWith("$2y$");
-    }
 }

@@ -1,6 +1,8 @@
 package com.liushao.user.dao;
 
-import com.liushao.user.pojo.User;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -8,8 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-import java.util.Optional;
+import com.liushao.user.pojo.User;
 
 /**
  * @author huangshen
@@ -17,6 +18,9 @@ import java.util.Optional;
 public interface UserDao extends JpaRepository<User, String> {
 
 	List<User> findAllByMobile(String mobile);
+
+	@Query(value = "SELECT * FROM tb_user WHERE mobile = :mobile FOR UPDATE", nativeQuery = true)
+	List<User> findAllByMobileForUpdate(@Param("mobile") String mobile);
 
 	@Query(value = "SELECT * FROM tb_user WHERE id = :id FOR UPDATE", nativeQuery = true)
 	Optional<User> findByIdForUpdate(@Param("id") String id);

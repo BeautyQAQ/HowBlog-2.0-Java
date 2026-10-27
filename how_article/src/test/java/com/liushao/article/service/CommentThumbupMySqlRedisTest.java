@@ -48,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named = "HOW_ARTICLE_TEST_CONFIG", matches = ".+")
 class CommentThumbupMySqlRedisTest {
+    private final String articleId = "thumbup-test-article-" + UUID.randomUUID();
     private static final String LEGACY_PREFIX = "thumbup_";
     private static final String CACHE_PREFIX = "thumbup:v2:";
 
@@ -83,6 +84,9 @@ class CommentThumbupMySqlRedisTest {
                 assertEquals("PONG", connection.ping());
             }
             redis = redisTemplate(redisConnection);
+            stage = "test article fixture";
+            jdbc.update("INSERT INTO tb_article (id, userid, title, content, state) VALUES (?, ?, ?, ?, '1')",
+                    articleId, "thumbup-test-author", "thumbup test", "thumbup integration test fixture");
             try (AnnotationConfigApplicationContext context = context(source, redis)) {
                 CommentService service = context.getBean(CommentService.class);
                 stage = "first and duplicate thumbup";
@@ -225,7 +229,7 @@ class CommentThumbupMySqlRedisTest {
         String id = "thumbup-test-" + UUID.randomUUID();
         jdbc.update("INSERT INTO tb_comment (id, articleid, content, userid, publishdate, thumbup) "
                         + "VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), 0)",
-                id, "thumbup-test-article", "thumbup integration test fixture", "thumbup-test-author");
+                id, articleId, "thumbup integration test fixture", "thumbup-test-author");
         commentIds.add(id);
         return id;
     }
@@ -253,10 +257,12 @@ class CommentThumbupMySqlRedisTest {
         for (String key : redisKeys) {
             redis.delete(key);
         }
+        jdbc.update("DELETE FROM tb_article WHERE id = ?", articleId);
     }
 
     private void assertNoLeftovers(JdbcTemplate jdbc, RedisTemplate<Object, Object> redis, List<String> commentIds,
             List<String> redisKeys) {
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM tb_article WHERE id = ?", Integer.class, articleId));
         for (String commentId : commentIds) {
             assertEquals(0, allRelationCount(jdbc, commentId));
             int remaining = jdbc.queryForObject("SELECT COUNT(*) FROM tb_comment WHERE id = ?",

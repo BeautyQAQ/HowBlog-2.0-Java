@@ -1,18 +1,19 @@
 package com.liushao.article.controller;
 
-import com.liushao.auth.CurrentUserContext;
-import com.liushao.auth.RequireAuthentication;
+import java.util.List;
+
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
 import com.liushao.article.pojo.Comment;
 import com.liushao.article.service.CommentService;
+import com.liushao.auth.AuthenticatedUser;
+import com.liushao.auth.CurrentUserContext;
+import com.liushao.auth.RequireAuthentication;
 import com.liushao.entity.Result;
 import com.liushao.entity.StatusCode;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.validation.annotation.Validated;
-
 import com.liushao.web.ResourceNotFoundException;
 import com.liushao.web.ValidationGroups;
-
-import java.util.List;
 
 /**
  * @author huangshen
@@ -30,14 +31,14 @@ public class CommentController {
     //根据id查询评论
     @RequestMapping(value = "{id}", method = RequestMethod.GET)
     public Result findById(@PathVariable String id) {
-        Comment comment = commentService.findById(id);
+        Comment comment = commentService.findById(id, viewerId());
         return new Result(true, StatusCode.OK, "查询成功", comment);
     }
 
     //查询所有
     @RequestMapping(method = RequestMethod.GET)
     public Result findAll() {
-        List<Comment> list = commentService.findAll();
+        List<Comment> list = commentService.findAll(viewerId());
         return new Result(true, StatusCode.OK, "查询成功", list);
     }
 
@@ -74,7 +75,7 @@ public class CommentController {
     //根据文章id查询评论列表
     @RequestMapping(value = "article/{articleId}", method = RequestMethod.GET)
     public Result findByarticleId(@PathVariable String articleId) {
-        List<Comment> list = commentService.findByarticleId(articleId);
+        List<Comment> list = commentService.findByarticleId(articleId, viewerId());
         return new Result(true, StatusCode.OK, "查询成功", list);
     }
 
@@ -93,5 +94,9 @@ public class CommentController {
             throw new ResourceNotFoundException();
         }
         return new Result(true, StatusCode.OK, "点赞成功");
+    }
+
+    private String viewerId() {
+        return CurrentUserContext.get().map(AuthenticatedUser::getUserId).orElse(null);
     }
 }

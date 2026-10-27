@@ -1,15 +1,9 @@
 package com.liushao.user.service;
 
+import java.time.Duration;
+import java.util.List;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.liushao.auth.JwtTokenService;
-import com.liushao.user.dao.UserDao;
-import com.liushao.user.pojo.ChangePasswordRequest;
-import com.liushao.user.pojo.LoginRequest;
-import com.liushao.user.pojo.LoginResponse;
-import com.liushao.user.pojo.ProfileResponse;
-import com.liushao.user.pojo.ProfileUpdateRequest;
-import com.liushao.user.pojo.RegisterRequest;
-import com.liushao.user.pojo.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,8 +13,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import java.util.List;
-import java.time.Duration;
+import com.liushao.auth.JwtTokenService;
+import com.liushao.user.dao.UserDao;
+import com.liushao.user.pojo.ChangePasswordRequest;
+import com.liushao.user.pojo.LoginRequest;
+import com.liushao.user.pojo.LoginResponse;
+import com.liushao.user.pojo.ProfileResponse;
+import com.liushao.user.pojo.ProfileUpdateRequest;
+import com.liushao.user.pojo.RegisterRequest;
+import com.liushao.user.pojo.User;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -69,7 +70,7 @@ class UserServiceTest {
     void loginUsesMobileOnlyUpgradesLegacyPasswordAndReturnsNoPassword() throws Exception {
         when(userDao.existsById("10001")).thenReturn(true);
         User user = userWithPassword(PASSWORD);
-        when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(user));
+        when(userDao.findAllByMobileForUpdate(MOBILE)).thenReturn(List.of(user));
 
         LoginResponse response = userService.login(loginRequest(PASSWORD));
 
@@ -82,7 +83,7 @@ class UserServiceTest {
         assertFalse(response.getToken().isBlank());
         assertTrue(passwordEncoder.matches(PASSWORD, user.getPassword()));
         assertFalse(objectMapper.writeValueAsString(response).contains("password"));
-        verify(userDao).findAllByMobile(MOBILE);
+        verify(userDao).findAllByMobileForUpdate(MOBILE);
         verify(userDao).save(user);
     }
 
@@ -90,7 +91,7 @@ class UserServiceTest {
     void loginWithBcryptPasswordDoesNotWriteTheUserAgain() {
         when(userDao.existsById("10001")).thenReturn(true);
         User user = userWithPassword(passwordEncoder.encode(PASSWORD));
-        when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(user));
+        when(userDao.findAllByMobileForUpdate(MOBILE)).thenReturn(List.of(user));
 
         LoginResponse response = userService.login(loginRequest(PASSWORD));
 
@@ -100,13 +101,39 @@ class UserServiceTest {
 
     @Test
     void loginRejectsAmbiguousOrInvalidCredentials() {
-        when(userDao.findAllByMobile(MOBILE)).thenReturn(List.of(
+        when(userDao.findAllByMobileForUpdate(MOBILE)).thenReturn(List.of(
                 userWithPassword(PASSWORD),
                 userWithPassword(PASSWORD)
         ));
 
         assertNull(userService.login(loginRequest(PASSWORD)));
         verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
+    }
+
+    @Test
+    void legacyLongPasswordUpgradesOnceAndPreservesItsFullValue() {
+        String legacy = "汉".repeat(24) + "a";
+        User user = userWithPassword(legacy);
+        when(userDao.findAllByMobileForUpdate(MOBILE)).thenReturn(List.of(user));
+        when(userDao.existsById("10001")).thenReturn(true);
+
+        assertNull(userService.login(loginRequest("汉".repeat(24) + "b")));
+        assertNotNull(userService.login(loginRequest(legacy)));
+        assertTrue(user.getPassword().startsWith("{bcrypt-sha256}"));
+        assertNotNull(userService.login(loginRequest(legacy)));
+        assertNull(userService.login(loginRequest("汉".repeat(24) + "b")));
+        verify(userDao).save(user);
+    }
+
+    @Test
+    void loginRejectsOverlongCandidatesAgainstDirectBcrypt() {
+        String boundary = "汉".repeat(24);
+        User user = userWithPassword(passwordEncoder.encode(boundary));
+        when(userDao.findAllByMobileForUpdate(MOBILE)).thenReturn(List.of(user));
+
+        assertNull(userService.login(loginRequest(boundary + "a")));
+        verifyNoInteractions(sessionDao);
+        verify(userDao, never()).save(any(User.class));
     }
 
     @Test
@@ -154,6 +181,7 @@ class UserServiceTest {
         assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "short", null)));
         assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "x".repeat(65), null)));
         assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "        ", null)));
+        assertEquals(UserService.RegisterResult.INVALID, userService.register(registerRequest(MOBILE, "汉".repeat(24) + "a", null)));
         verify(userDao, never()).findAllByMobile(org.mockito.ArgumentMatchers.anyString());
         verify(userDao, never()).save(org.mockito.ArgumentMatchers.any(User.class));
     }
@@ -178,7 +206,7 @@ class UserServiceTest {
     void updateProfileAppliesOnlyProvidedFieldsAndStrips() {
         User user = userWithPassword(PASSWORD);
         user.setAvatar("https://example.test/old.png");
-        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(user));
+        when(userDao.findByIdForUpdate("10001")).thenReturn(java.util.Optional.of(user));
         ProfileUpdateRequest request = new ProfileUpdateRequest();
         request.setNickname("  Bob  ");
         request.setEmail("bob@example.test");
@@ -195,7 +223,7 @@ class UserServiceTest {
 
     @Test
     void updateProfileReturnsNullForMissingUser() {
-        when(userDao.findById("missing")).thenReturn(java.util.Optional.empty());
+        when(userDao.findByIdForUpdate("missing")).thenReturn(java.util.Optional.empty());
 
         assertNull(userService.updateProfile("missing", new ProfileUpdateRequest()));
 
@@ -204,7 +232,7 @@ class UserServiceTest {
 
     @Test
     void changePasswordStoresNewHashAndRevokesOtherSessions() {
-        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(userWithPassword(passwordEncoder.encode(PASSWORD))));
+        when(userDao.findByIdForUpdate("10001")).thenReturn(java.util.Optional.of(userWithPassword(passwordEncoder.encode(PASSWORD))));
         when(sessionDao.revokeActiveExcept(eq("10001"), eq("session-1"), any(java.time.LocalDateTime.class))).thenReturn(2);
         ChangePasswordRequest request = new ChangePasswordRequest();
         request.setOldPassword(PASSWORD);
@@ -220,7 +248,7 @@ class UserServiceTest {
 
     @Test
     void changePasswordRejectsWrongOldPasswordWithoutWriting() {
-        when(userDao.findById("10001")).thenReturn(java.util.Optional.of(userWithPassword(passwordEncoder.encode(PASSWORD))));
+        when(userDao.findByIdForUpdate("10001")).thenReturn(java.util.Optional.of(userWithPassword(passwordEncoder.encode(PASSWORD))));
         ChangePasswordRequest request = new ChangePasswordRequest();
         request.setOldPassword("wrong-password-1");
         request.setNewPassword("new-password-456");
@@ -233,6 +261,36 @@ class UserServiceTest {
     }
 
     @Test
+    void changePasswordRejectsOverlongOldPasswordAgainstDirectBcrypt() {
+        String boundary = "汉".repeat(24);
+        User user = userWithPassword(passwordEncoder.encode(boundary));
+        when(userDao.findByIdForUpdate("10001")).thenReturn(java.util.Optional.of(user));
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setOldPassword(boundary + "a");
+        request.setNewPassword("new-password-456");
+
+        assertEquals(UserService.PasswordChangeResult.WRONG_PASSWORD,
+                userService.changePassword("10001", "session-1", request));
+        verify(userDao, never()).save(any(User.class));
+        verifyNoInteractions(sessionDao);
+    }
+
+    @Test
+    void changePasswordAcceptsFullLegacyLongPasswordAndStoresNormalNewHash() {
+        String legacy = "汉".repeat(24) + "a";
+        User user = userWithPassword(legacy);
+        when(userDao.findByIdForUpdate("10001")).thenReturn(java.util.Optional.of(user));
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setOldPassword(legacy);
+        request.setNewPassword("new-password-456");
+
+        assertEquals(UserService.PasswordChangeResult.SUCCESS,
+                userService.changePassword("10001", "session-1", request));
+        assertTrue(user.getPassword().startsWith("$2"));
+        assertTrue(passwordEncoder.matches("new-password-456", user.getPassword()));
+    }
+
+    @Test
     void changePasswordRejectsInvalidInputAndMissingUser() {
         ChangePasswordRequest request = new ChangePasswordRequest();
         request.setOldPassword(PASSWORD);
@@ -241,11 +299,13 @@ class UserServiceTest {
         assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", null));
         request.setNewPassword("x".repeat(65));
         assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", request));
+        request.setNewPassword("汉".repeat(24) + "a");
+        assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", request));
         request.setNewPassword("new-password-456");
         request.setOldPassword("   ");
         assertEquals(UserService.PasswordChangeResult.INVALID, userService.changePassword("10001", "session-1", request));
 
-        when(userDao.findById("missing")).thenReturn(java.util.Optional.empty());
+        when(userDao.findByIdForUpdate("missing")).thenReturn(java.util.Optional.empty());
         request.setOldPassword(PASSWORD);
         assertNull(userService.changePassword("missing", "session-1", request));
 

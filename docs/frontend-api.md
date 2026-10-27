@@ -1,8 +1,8 @@
 # HowBlog 前端接口契约
 
-> 当前契约版本：`6.11.0`
-> 当前同步 revision：`21`
-> 最后更新：`2026-10-18`
+> 当前契约版本：`7.0.0`
+> 当前同步 revision：`22`
+> 最后更新：`2026-10-27`
 > 机器可读状态：[frontend-api-status.json](frontend-api-status.json)
 > 变更记录：[frontend-api-changelog.md](frontend-api-changelog.md)
 
@@ -108,15 +108,15 @@ REST 接口返回 `Result`：
 
 写操作输入约束：
 
-- 注册：`mobile` 必填且为 11 位以 `1` 开头的数字；`password` 必填、8 到 64 个字符；`nickname` 可选、最长 100 个字符。
+- 注册：`mobile` 必填且为 11 位以 `1` 开头的数字；`password` 必填、8 到 64 个字符且 UTF-8 编码不超过 72 字节；`nickname` 可选、最长 100 个字符。
 - 修改资料：`nickname` 最长 100、`avatar` 最长 500、`sex` 最长 16、`email` 最长 255 且需为合法邮箱、`interest` 与 `personality` 最长 500；提供的字符串不能为纯空白，未提供的字段保留原值。
-- 修改密码：`oldPassword` 必填且需与当前密码一致；`newPassword` 必填、8 到 64 个字符且不能为纯空白。
+- 修改密码：`oldPassword` 必填且需与当前密码一致；`newPassword` 必填、8 到 64 个字符、UTF-8 编码不超过 72 字节且不能为纯空白。
 - 新增文章：`title` 和 `content` 必填，不能是空字符串或纯空白。
 - 文章 `labelIds` 如提供必须是标签 ID 字符串数组；元素会去除首尾空白并去重，空字符串或不存在的标签返回 HTTP 400。
-- 新增评论：`articleid` 和 `content` 必填，不能是空字符串或纯空白。
+- 新增评论：`articleid` 和 `content` 必填且非空白；文章必须存在且已发布；可选 `parentid` 必须指向同篇文章内存在的评论。
 - 新增标签：`labelname` 必填且非空白；`count`、`fans` 如提供则必须大于等于 0。
 - 编辑文章的 `title`、`content`，评论的 `content`，标签的 `labelname`：未提供或为 `null` 时保留原值；提供字符串时不能为空白。标签编辑的 `count`、`fans` 如提供也必须大于等于 0。
-- 本轮不新增最大文本长度、状态枚举、评论关联文章/父评论存在性约束；这些不属于已经实现的校验。
+- 文章与评论正文尚未增加最大文本长度约束；评论已校验关联文章及父评论存在性，不能通过编辑更换归属。
 
 ## 服务健康检查
 
@@ -195,7 +195,7 @@ REST 接口返回 `Result`：
 | `istop` | string | 是否置顶；新增时服务端置为 `0` |
 | `visits` | integer/null | 浏览量；新增时服务端初始化为 `0`，非作者读取已发布文章时服务端累加 |
 | `thumbup` | integer/null | 点赞数；新增时服务端初始化为 `0`，文章点赞接口原子累加 |
-| `comment` | integer/null | 评论数；新增时服务端初始化为 `0` |
+| `comment` | integer/null | 评论总数（包含回复）；新增文章时为 `0`，新增评论原子加 1，删除分支按实际删除数原子扣减且不小于 0；不自动校准历史偏差 |
 | `state` | string | 文章状态：`0` 草稿、`1` 已发布、`2` 待审核；由服务端维护 |
 | `channelid` | string | 频道 ID |
 | `url` | string | 文章 URL |
@@ -210,7 +210,7 @@ REST 接口返回 `Result`：
 | `articleid` | string | 所属文章 ID |
 | `content` | string | 评论内容 |
 | `userid` | string | 用户 ID |
-| `parentid` | string | 父评论 ID；顶级评论可为空 |
+| `parentid` | string/null | 父评论 ID，必须存在且属于同篇文章；省略、null 或纯空白表示顶级评论，保存为 null |
 | `publishdate` | datetime/null | 发布时间；新增时由后端设置 |
 | `thumbup` | integer/null | 点赞数；新增时初始化为 0 |
 
@@ -250,7 +250,7 @@ REST 接口返回 `Result`：
 ```
 
 - `mobile` 必填，必须为 11 位数字且以 `1` 开头。
-- `password` 必填，长度 8 到 64 个字符，不能为纯空白；服务端只保存 BCrypt 哈希，从不回显或返回密码。
+- `password` 必填，长度 8 到 64 个字符（按 Java 字符串长度计），不能为纯空白，且 UTF-8 编码不超过 72 字节；服务端只保存 BCrypt 哈希，从不回显或返回密码。超过字节上限返回 HTTP 400/20001，即使字符数未超限。
 - `nickname` 可选，最长 100 个字符；首尾空白会被去除，去除后为空时按未提供处理。
 - 未知 JSON 字段会被忽略。请求体缺失、坏 JSON 或字段不符合上述规则返回 HTTP 400、`code: 20001`、`message: "请求格式或参数不正确"`。
 
@@ -323,7 +323,9 @@ REST 接口返回 `Result`：
 }
 ```
 
-存量明文密码在一次成功登录后会升级为 BCrypt 哈希；不会执行批量改密。密码升级、会话写入和访问 token 签发在同一事务内，失败不留下部分会话。当前仍没有注册或用户资料修改接口。
+存量明文密码只在完整匹配后的成功登录中升级，不执行批量改密。UTF-8 长度不超过 72 字节的存量密码升级为直接 BCrypt；超过 72 字节的历史明文升级为带 `{bcrypt-sha256}` 标记的 BCrypt(SHA-256 UTF-8 完整密码的十六进制摘要)，继续校验完整输入。标记格式由服务端识别，客户端不预哈希。密码升级、会话写入和访问 token 签发在同一事务内，失败不留下部分会话。
+
+直接 BCrypt 账号的登录候选密码超过 72 UTF-8 字节时，返回原有 HTTP 200/20002 密码错误，避免忽略尾部字符；历史标记格式允许输入完整的原密码。若历史账号已被直接 BCrypt 截断，原后缀无法恢复，需运维受控重置，不自动迁移或猜测原密码。登录与改密读取最新用户行；并发使用同一旧密码改成不同新密码时，后提交者重新验证并返回旧密码错误。
 
 ### POST `/user/refresh`
 
@@ -416,7 +418,8 @@ REST 接口返回 `Result`：
 ```
 
 - `oldPassword` 必填，必须与当前密码一致，否则返回 HTTP 200、`flag: false`、`code: 20002`、`message: "旧密码不正确"`。
-- `newPassword` 必填，长度 8 到 64 个字符，不能为纯空白；服务端只保存 BCrypt 哈希，未强制新密码与旧密码不同。
+- `newPassword` 必填，长度 8 到 64 个字符（按 Java 字符串长度计），不能为纯空白，且 UTF-8 编码不超过 72 字节；服务端只保存 BCrypt 哈希，未强制新密码与旧密码不同。
+- `oldPassword` 对直接 BCrypt 账号也拒绝超过 72 UTF-8 字节的候选（HTTP 200/20002）；历史 `{bcrypt-sha256}` 标记账号校验完整原密码。
 - 请求体缺失、坏 JSON 或字段不符合规则返回 HTTP 400、`code: 20001`；未认证返回 HTTP 401、`code: 20003`。
 - 成功返回 HTTP 200、`code: 20000`、`message: "修改成功"`、`data: null`。
 
@@ -537,7 +540,7 @@ REST 接口返回 `Result`：
 
 ### DELETE `/article/{articleId}`
 
-删除文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。删除时会级联清理文章标签关系；无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
+删除文章。需要 `Authorization: Bearer <token>`，且当前用户必须是文章作者。删除时在同一事务内清理文章标签关系、全部评论及回复、评论点赞关系和文章点赞关系，并扣减对应标签使用数；任何步骤失败整体回滚；无权操作或文章不存在时返回 `flag: false`、`code: 20003`。
 
 ### POST `/article/search/{page}/{size}`
 
@@ -589,19 +592,23 @@ Content-Type: application/json
 
 ### GET `/comment`
 
-查询全部评论。成功时 `data` 为 `Comment[]`。
+查询当前访问者可见的评论。成功时 `data` 为 `Comment[]`，按发布时间、ID 倒序；匿名访问仅包含已发布文章的评论，带有效 token 时额外包含本人文章的评论，数据库 `ADMIN` 可见所有存在文章的评论。无对应文章的历史孤立评论不返回。
 
 ### GET `/comment/{id}`
 
-按评论 ID 查询评论。不存在时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
+按评论 ID 查询评论。评论及所属文章均需存在；文章已发布时公开可读，草稿/待审核文章的评论仅文章作者或数据库 `ADMIN` 可读，其他人按资源不存在处理。不存在或不可见时返回 HTTP 404、`code: 20001`、`message: "资源不存在"`。
 
 ### GET `/comment/article/{articleId}`
 
-按文章 ID 查询评论列表，按发布时间倒序返回。成功时 `data` 为 `Comment[]`。
+按文章 ID 查询评论平铺列表，按发布时间倒序返回。成功时 `data` 为 `Comment[]`，仍通过 `parentid` 表示回复关系。所属文章必须存在且对访问者可见，可见性同单条评论；不存在或不可见时返回 HTTP 404/20001（不再返回空数组），存在且无评论时返回空数组。
 
 ### POST `/comment`
 
 新增评论。需要 `Authorization: Bearer <token>`。后端生成 `_id`、设置 `publishdate`，并把 `thumbup` 初始化为 `0`；`userid` 始终使用 token 中的用户 ID，忽略请求体中的值。请求体必须包含非空白的 `articleid` 和 `content`，`parentid` 可选。
+
+- 所属文章必须存在且已发布（`state: "1"`），否则返回 HTTP 404/20001，包括作者自己的草稿/待审核文章。
+- `parentid` 省略、null 或纯空白时保存为 null；非空值会去除首尾空白，父评论不存在或属于另一篇文章返回 HTTP 400/20001。
+- 评论保存与所属文章 `comment` 原子加 1 在同一事务内完成，失败不留下部分评论或计数；计数包含所有层级回复。
 
 请求示例：
 
@@ -615,11 +622,11 @@ Content-Type: application/json
 
 ### PUT `/comment/{id}`
 
-修改评论。需要 `Authorization: Bearer <token>`，且当前用户必须是评论作者。路径 ID 会写入请求体对象的 `_id`；作者只能修改 `content`，不能修改评论归属、父评论、`userid`、发布时间或点赞数。无权操作或评论不存在时返回 `flag: false`、`code: 20003`。
+修改评论。需要 `Authorization: Bearer <token>`，且当前用户必须是评论作者。路径 ID 会写入请求体对象的 `_id`；作者只能修改 `content`，不能修改评论归属、父评论、`userid`、发布时间或点赞数。无权操作、评论不存在或所属文章不存在时返回 `flag: false`、`code: 20003`。
 
 ### DELETE `/comment/{id}`
 
-按 ID 删除评论。需要 `Authorization: Bearer <token>`，且当前用户必须是评论作者。无权操作或评论不存在时返回 `flag: false`、`code: 20003`。
+按 ID 删除评论。需要 `Authorization: Bearer <token>`，且当前用户必须是该评论作者（管理员和文章作者没有代删权限）。成功时物理删除该评论及其全部后代回复，即使回复由其他用户发表；仅影响同篇文章中的这个分支，保留其他分支。评论点赞关系一起清理，文章 `comment` 按实际删除条数原子扣减且不低于 0，整个操作同事务提交。文章下架后，评论作者仍可修改或删除本人评论。无权操作、评论不存在或所属文章不存在时返回 `flag: false`、`code: 20003`。客户端应在删除后刷新整篇评论列表和文章统计。
 
 ### PUT `/comment/thumbup/{id}`
 
@@ -627,7 +634,7 @@ Content-Type: application/json
 
 - 首次点赞通常返回 `flag: true`、`code: 20000`、`message: "点赞成功"`。
 - 同一用户再次点赞返回 `flag: false`、`code: 20004`、`message: "不能重复点赞"`。
-- 评论不存在时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
+- 评论不存在、所属文章不存在或尚未发布时返回 HTTP 404、`flag: false`、`code: 20001`、`message: "资源不存在"`。
 - 点赞关系写入 MySQL 的 `tb_comment_thumbup` 唯一关系表，计数在同一事务中原子递增；Redis 仅作为提交后的短期兼容缓存，Redis 不可用不改变数据库结果。
 - 旧版本 `thumbup_<userId>_<commentId>` Redis 记录会在首次请求时登记到关系表但不会再次增加计数；部署前必须先执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。
 - 数据库事务失败不会写入新的 Redis 缓存；关系表唯一键负责并发去重，避免 Redis 残留导致永久误判或重复计数。
@@ -758,10 +765,12 @@ HTTPS 页面使用 `wss://`。浏览器 WebSocket 握手当前通过 URL 查询�
 
 - 已支持持久化登录会话、刷新轮换和当前会话退出；没有全设备退出或管理员撤销接口。过期会话/历史刷新摘要的有界清理已实现但默认关闭，须经运维确认保留策略、数据库权限和删除授权后开启，见 [admin-operations.md](admin-operations.md)。
 - 认证限流依赖用户服务 Redis，默认开启且故障关闭；当前自动化测试覆盖 MVC、模拟 Redis 和 H2 清理，真实 Redis Lua、多实例网络和 MySQL 清理验收尚未执行。固定窗口不是滑动窗口，窗口边界允许短时突发；不替代网关全局流量限制。
-- 文章和评论继续要求作者本人；数据库 `ADMIN` 目前仅用于标签管理，不拥有代改文章或评论的权限。角色管理无公开接口，初始化流程见 [admin-operations.md](admin-operations.md)。
+- 文章和评论的内容修改/删除继续要求作者本人；数据库 `ADMIN` 用于标签管理、文章审核及读取非公开文章/其评论，不拥有代改文章内容或评论的权限。角色管理无公开接口，初始化流程见 [admin-operations.md](admin-operations.md)。
 - 评论点赞使用 MySQL 唯一关系表和原子计数，Redis 仅用于提交后的短期兼容缓存；部署前需要执行 [mysql-thumbup-migration.sql](mysql-thumbup-migration.sql)。已在隔离临时数据上通过真实 MySQL、Redis 和 HTTP 旧键迁移验收；生产部署仍需按目标环境复核连接、密钥和数据备份策略。
 - WebSocket token 暂通过 URL 查询参数传递，且消息仍只保存在进程内存中。
-- 已有基础必填、非空白、非负计数和分页校验；最大文本长度、关联资源存在性仍未全面校验。
+- 已有基础必填、非空白、非负计数和分页校验；评论已增加文章与父评论存在性和同文章归属校验。评论仍返回平铺数组，未增加评论树分页、审核或通知接口，正文最大长度尚未全面限制。
+- 评论计数从本版本起对新增/删除操作维护，不重算历史计数、不批量清理孤立评论。历史偏差须在另行核对和授权后处理。
+- 用户与文章写操作在事务内锁定目标行；资料更新不回写未修改的密码和统计字段，文章编辑/状态变更不覆盖浏览、点赞、评论计数。同一文章的详情读取、写入和评论操作可能因行锁等待。
 - 文章已有草稿/已发布/待审核状态与作者权限：新增即为草稿，`publish`/`unpublish`/`submit` 仅作者可调用，`approve`/`reject` 仅数据库 `ADMIN` 可调用，公开列表只返回已发布文章，草稿与待审核仅作者或管理员可见。作者仍可自行 `publish`，审核（`submit` → `approve`/`reject`）为可选路径；未授予任何真实账号管理员权限，未授权时审核接口对所有用户返回 403。
 - 文章浏览量在 `GET /article/{articleId}` 读取已发布文章时累加（排除作者本人），没有按用户或 IP 去重，重复刷新、预取或爬虫会重复计数；草稿与待审核文章不计入。
 - 文章点赞使用唯一关系表 `tb_article_thumbup`（部署前执行 [mysql-article-thumbup-migration.sql](mysql-article-thumbup-migration.sql)，可重复执行）；历史 `tb_article.thumbup` 计数保留、不重算、不补关系，历史点赞用户仍可再次点赞。暂不支持取消点赞或点赞用户列表。

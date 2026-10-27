@@ -23,6 +23,8 @@ import org.springframework.data.jpa.domain.Specification;
 import com.liushao.article.dao.ArticleDao;
 import com.liushao.article.dao.ArticleLabelDao;
 import com.liushao.article.dao.ArticleThumbupDao;
+import com.liushao.article.dao.CommentDao;
+import com.liushao.article.dao.CommentThumbupDao;
 import com.liushao.article.dao.UserRoleDao;
 import com.liushao.article.pojo.Article;
 import com.liushao.util.IdWorker;
@@ -52,9 +54,12 @@ class ArticleServiceTest {
     @Mock private UserRoleDao userRoleDao;
     @Mock private ArticleThumbupDao articleThumbupDao;
     @Mock private ArticleLabelDao articleLabelDao;
+    @Mock private CommentDao commentDao;
+    @Mock private CommentThumbupDao commentThumbupDao;
 
     private ArticleService service() {
-        return new ArticleService(articleDao, idWorker, userRoleDao, articleThumbupDao, articleLabelDao);
+        return new ArticleService(articleDao, idWorker, userRoleDao, articleThumbupDao, articleLabelDao,
+                commentDao, commentThumbupDao);
     }
 
     private Article draft(String userId) {
@@ -103,6 +108,7 @@ class ArticleServiceTest {
     void addStoresDistinctTrimmedLabels() {
         when(idWorker.nextId()).thenReturn(123L);
         when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+        when(articleLabelDao.insertExistingLabels("123", List.of("java", "spring"))).thenReturn(2);
         Article article = new Article();
         article.setTitle("title");
         article.setContent("body");
@@ -130,7 +136,7 @@ class ArticleServiceTest {
     @Test
     void publishSetsPublishedStateAndFirstPublishTime() {
         Article article = draft("author");
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
 
         assertTrue(service().publish("one", "author"));
 
@@ -144,7 +150,7 @@ class ArticleServiceTest {
         Article article = draft("author");
         Date firstPublish = new Date(1_000_000L);
         article.setCreatetime(firstPublish);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
 
         assertTrue(service().publish("one", "author"));
 
@@ -154,8 +160,8 @@ class ArticleServiceTest {
     @Test
     void publishRejectsNonAuthorAndMissingArticle() {
         Article article = draft("other");
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
-        when(articleDao.findById("missing")).thenReturn(Optional.empty());
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("missing")).thenReturn(Optional.empty());
 
         assertFalse(service().publish("one", "author"));
         assertFalse(service().publish("missing", "author"));
@@ -170,7 +176,7 @@ class ArticleServiceTest {
         article.setState(Article.STATE_PUBLISHED);
         Date publishTime = new Date(1_000_000L);
         article.setCreatetime(publishTime);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
 
         assertTrue(service().unpublish("one", "author"));
 
@@ -182,7 +188,7 @@ class ArticleServiceTest {
     @Test
     void submitMovesOwnDraftToPendingReview() {
         Article article = draft("author");
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
 
         assertEquals(ArticleService.TransitionResult.SUCCESS, service().submit("one", "author"));
 
@@ -192,11 +198,11 @@ class ArticleServiceTest {
 
     @Test
     void submitRejectsNonAuthorWrongStateAndMissingArticle() {
-        when(articleDao.findById("one")).thenReturn(Optional.of(draft("other")));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(draft("other")));
         Article published = draft("author");
         published.setState(Article.STATE_PUBLISHED);
-        when(articleDao.findById("two")).thenReturn(Optional.of(published));
-        when(articleDao.findById("missing")).thenReturn(Optional.empty());
+        when(articleDao.findByIdForUpdate("two")).thenReturn(Optional.of(published));
+        when(articleDao.findByIdForUpdate("missing")).thenReturn(Optional.empty());
 
         assertEquals(ArticleService.TransitionResult.NOT_ALLOWED, service().submit("one", "author"));
         assertEquals(ArticleService.TransitionResult.INVALID_STATE, service().submit("two", "author"));
@@ -211,7 +217,7 @@ class ArticleServiceTest {
 
         assertThrows(ForbiddenException.class, () -> service().approve("one", "author"));
 
-        verify(articleDao, never()).findById(any());
+        verify(articleDao, never()).findByIdForUpdate(any());
     }
 
     @Test
@@ -219,7 +225,7 @@ class ArticleServiceTest {
         Article article = draft("author");
         article.setState(Article.STATE_PENDING);
         when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
 
         assertEquals(ArticleService.TransitionResult.SUCCESS, service().approve("one", "admin"));
 
@@ -233,7 +239,7 @@ class ArticleServiceTest {
         Article article = draft("author");
         article.setState(Article.STATE_PENDING);
         when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
 
         assertEquals(ArticleService.TransitionResult.SUCCESS, service().reject("one", "admin"));
 
@@ -244,8 +250,8 @@ class ArticleServiceTest {
     @Test
     void reviewRejectsWrongStateAndMissingArticle() {
         when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
-        when(articleDao.findById("one")).thenReturn(Optional.of(draft("author")));
-        when(articleDao.findById("missing")).thenReturn(Optional.empty());
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(draft("author")));
+        when(articleDao.findByIdForUpdate("missing")).thenReturn(Optional.empty());
 
         assertEquals(ArticleService.TransitionResult.INVALID_STATE, service().approve("one", "admin"));
         assertThrows(ResourceNotFoundException.class, () -> service().reject("missing", "admin"));
@@ -256,7 +262,7 @@ class ArticleServiceTest {
     @Test
     void findByIdHidesDraftsFromNonAuthorsButShowsThemToAdministrators() {
         Article draft = draft("author");
-        when(articleDao.findById("one")).thenReturn(Optional.of(draft));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(draft));
         when(userRoleDao.countAdministrator("admin")).thenReturn(1L);
 
         assertSame(draft, service().findById("one", "author"));
@@ -268,7 +274,7 @@ class ArticleServiceTest {
     @Test
     void countsVisitsWhenNonAuthorReadsPublishedArticle() {
         Article article = publishedArticle("author", 5);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         when(articleDao.incrementVisits("one")).thenReturn(1);
 
         Article result = service().findById("one", "viewer");
@@ -280,7 +286,7 @@ class ArticleServiceTest {
     @Test
     void countsAnonymousReadsOfPublishedArticles() {
         Article article = publishedArticle("author", 0);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         when(articleDao.incrementVisits("one")).thenReturn(1);
 
         Article result = service().findById("one", null);
@@ -292,9 +298,9 @@ class ArticleServiceTest {
     @Test
     void doesNotCountAuthorOrDraftReads() {
         Article article = publishedArticle("author", 5);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         Article draft = draft("author");
-        when(articleDao.findById("draft")).thenReturn(Optional.of(draft));
+        when(articleDao.findByIdForUpdate("draft")).thenReturn(Optional.of(draft));
 
         assertEquals(5, service().findById("one", "author").getVisits());
         service().findById("draft", "author");
@@ -306,8 +312,8 @@ class ArticleServiceTest {
     void updateReplacesLabelsOnlyWhenLabelsAreProvided() {
         Article existing = draft("author");
         existing.setId("one");
-        when(articleDao.findById("one")).thenReturn(Optional.of(existing));
-        when(articleLabelDao.findLabelIdsByArticleId("one")).thenReturn(List.of("java"));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(existing));
+        when(articleLabelDao.findLabelIdsByArticleIdForUpdate("one")).thenReturn(List.of("java"));
         Article update = new Article();
         update.setId("one");
         update.setLabelIds(List.of());
@@ -315,20 +321,54 @@ class ArticleServiceTest {
         assertTrue(service().update(update, "author"));
 
         verify(articleLabelDao).deleteByArticleId("one");
-    verify(articleLabelDao).decrementLabelCounts(List.of("java"));
+        verify(articleLabelDao).decrementLabelCounts(List.of("java"));
         verify(articleLabelDao, never()).insertExistingLabels(any(), any());
+    }
+
+    @Test
+    void labelReplacementUsesCurrentLockedRelationsForCounters() {
+        Article existing = draft("author");
+        existing.setId("one");
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(existing));
+        when(articleLabelDao.countExistingLabels(List.of("requested"))).thenReturn(1L);
+        when(articleLabelDao.findLabelIdsByArticleIdForUpdate("one")).thenReturn(List.of("latest"));
+        when(articleLabelDao.insertExistingLabels("one", List.of("requested"))).thenReturn(1);
+        Article update = new Article();
+        update.setId("one");
+        update.setLabelIds(List.of("requested"));
+
+        assertTrue(service().update(update, "author"));
+
+        verify(articleLabelDao).decrementLabelCounts(List.of("latest"));
+        verify(articleLabelDao).incrementLabelCounts(List.of("requested"));
+        verify(articleLabelDao, never()).findLabelIdsByArticleId(any());
+    }
+
+    @Test
+    void incompleteLabelInsertionFailsBeforeIncrementingCounts() {
+        when(idWorker.nextId()).thenReturn(123L);
+        when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+        when(articleLabelDao.insertExistingLabels("123", List.of("java", "spring"))).thenReturn(1);
+        Article article = new Article();
+        article.setLabelIds(List.of("java", "spring"));
+
+        assertThrows(InvalidRequestException.class, () -> service().add(article, "author"));
+
+        verify(articleLabelDao, never()).incrementLabelCounts(any());
     }
 
     @Test
     void deleteRemovesArticleLabelsBeforeDeletingArticle() {
         Article existing = draft("author");
-        when(articleDao.findById("one")).thenReturn(Optional.of(existing));
-        when(articleLabelDao.findLabelIdsByArticleId("one")).thenReturn(List.of("java"));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(existing));
+        when(articleLabelDao.findLabelIdsByArticleIdForUpdate("one")).thenReturn(List.of("java"));
 
         assertTrue(service().delete("one", "author"));
 
         verify(articleLabelDao).deleteByArticleId("one");
         verify(articleLabelDao).decrementLabelCounts(List.of("java"));
+        verify(commentThumbupDao).deleteByArticleId("one");
+        verify(commentDao).deleteByArticleidBulk("one");
         verify(articleDao).delete(existing);
     }
 

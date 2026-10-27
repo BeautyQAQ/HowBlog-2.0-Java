@@ -5,14 +5,15 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 
+import com.liushao.user.validation.ValidPassword;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class RegisterRequest {
     @NotBlank
     @Pattern(regexp = "1\\d{10}")
     private String mobile;
 
-    @NotBlank
-    @Size(min = 8, max = 64)
+    @ValidPassword
     private String password;
 
     @Size(max = 100)

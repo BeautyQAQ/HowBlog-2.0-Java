@@ -23,9 +23,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.liushao.user.config.PasswordConfig;
 import com.liushao.user.dao.UserDao;
 import com.liushao.user.pojo.User;
-import com.liushao.user.service.UserService;
-import com.liushao.user.service.AuthRateLimiter;
 import com.liushao.user.service.AuthRateLimiter.Scope;
+import com.liushao.user.service.AuthRateLimiter;
+import com.liushao.user.service.UserService;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
@@ -33,10 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -128,7 +128,7 @@ class UserControllerTest {
         user.setId("author");
         user.setMobile("test-user");
         user.setPassword(passwordEncoder.encode("test-password"));
-        when(userDao.findAllByMobile("test-user")).thenReturn(List.of(user));
+        when(userDao.findAllByMobileForUpdate("test-user")).thenReturn(List.of(user));
         when(userDao.existsById("author")).thenReturn(true);
         mvc.perform(post("/user/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mobile\":\"test-user\",\"password\":\"test-password\"}"))
@@ -139,7 +139,7 @@ class UserControllerTest {
 
     @Test
     void hidesUnexpectedLoginFailure() throws Exception {
-        when(userDao.findAllByMobile("test-user")).thenThrow(new IllegalStateException("internal database detail"));
+        when(userDao.findAllByMobileForUpdate("test-user")).thenThrow(new IllegalStateException("internal database detail"));
         mvc.perform(post("/user/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mobile\":\"test-user\",\"password\":\"test-password\"}"))
                 .andExpect(status().isInternalServerError()).andExpect(jsonPath("$.code").value(20001))
@@ -188,6 +188,28 @@ class UserControllerTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001))
                 .andExpect(jsonPath("$.message").value("请求格式或参数不正确"));
         verifyNoInteractions(userDao);
+    }
+
+    @Test
+    void registerRejectsPasswordsAboveUtf8ByteLimitBeforeDatabaseAccess() throws Exception {
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"13900000000\",\"password\":\"" + "汉".repeat(24) + "a\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
+        verifyNoInteractions(userDao);
+    }
+
+    @Test
+    void registerAcceptsExactly72Utf8Bytes() throws Exception {
+        when(idWorker.nextId()).thenReturn(42L);
+        String password = "汉".repeat(24);
+
+        mvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mobile\":\"13900000000\",\"password\":\"" + password + "\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userDao).save(saved.capture());
+        assertTrue(passwordEncoder.matches(password, saved.getValue().getPassword()));
     }
 
     @Test

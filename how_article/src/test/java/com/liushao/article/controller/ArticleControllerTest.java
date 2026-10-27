@@ -102,11 +102,16 @@ class ArticleControllerTest {
         mvc.perform(post("/article").header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\":\"title\",\"content\":\"body\",\"userid\":\"forged\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
+        Article published = new Article();
+        published.setId("one");
+        published.setState(Article.STATE_PUBLISHED);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(published));
+        when(articleDao.incrementComment("one")).thenReturn(1);
         mvc.perform(post("/comment").header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"articleid\":\"one\",\"content\":\"body\",\"userid\":\"forged\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
         verify(articleDao).save(argThat(article -> "author".equals(article.getUserid())));
-        verify(commentDao).save(argThat(comment -> "author".equals(comment.getUserid())));
+        verify(commentDao).saveAndFlush(argThat(comment -> "author".equals(comment.getUserid())));
         assertTrue(CurrentUserContext.get().isEmpty());
     }
 
@@ -117,8 +122,10 @@ class ArticleControllerTest {
         article.setUserid(owner);
         Comment comment = new Comment();
         comment.setUserid(owner);
-        when(articleDao.findById("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
-        when(commentDao.findById("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(comment));
+        comment.setArticleid("one");
+        when(articleDao.findByIdForUpdate("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
+        when(commentDao.findArticleId("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of("one"));
+        when(commentDao.findByIdForUpdate("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(comment));
         for (String path : List.of("/article/one", "/comment/one")) {
             mvc.perform(put(path).header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"content\":\"edit\"}"))
@@ -139,16 +146,17 @@ class ArticleControllerTest {
         article.setTitle("original");
         Comment comment = new Comment();
         comment.setUserid("author");
-        comment.setArticleid("original");
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
-        when(commentDao.findById("one")).thenReturn(Optional.of(comment));
+        comment.setArticleid("one");
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        when(commentDao.findArticleId("one")).thenReturn(Optional.of("one"));
+        when(commentDao.findByIdForUpdate("one")).thenReturn(Optional.of(comment));
         for (String path : List.of("/article/one", "/comment/one")) {
             mvc.perform(put(path).header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"content\":\"edit\",\"userid\":\"forged\"}"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
         }
         verify(articleDao).save(argThat(saved -> "original".equals(saved.getTitle()) && "author".equals(saved.getUserid())));
-        verify(commentDao).save(argThat(saved -> "original".equals(saved.getArticleid()) && "edit".equals(saved.getContent())));
+        verify(commentDao).save(argThat(saved -> "one".equals(saved.getArticleid()) && "edit".equals(saved.getContent())));
     }
 
     @ParameterizedTest
@@ -186,6 +194,10 @@ class ArticleControllerTest {
 
     @Test
     void preservesDistinctCommentLookupRoutes() throws Exception {
+        Article article = new Article();
+        article.setId("one");
+        article.setState(Article.STATE_PUBLISHED);
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
         when(commentDao.findByArticleidOrderByPublishdateDesc("one")).thenReturn(List.of());
         mvc.perform(get("/comment/article/one")).andExpect(status().isOk()).andExpect(jsonPath("$.data").isArray());
         verify(commentDao).findByArticleidOrderByPublishdateDesc("one");
@@ -236,6 +248,7 @@ class ArticleControllerTest {
         @Test
         void createsArticleWithDistinctLabelIds() throws Exception {
                 when(articleLabelDao.countExistingLabels(List.of("java", "spring"))).thenReturn(2L);
+                when(articleLabelDao.insertExistingLabels(any(), eq(List.of("java", "spring")))).thenReturn(2);
                 mvc.perform(post("/article").header("Authorization", authorization()).contentType(MediaType.APPLICATION_JSON)
                                                 .content("{\"title\":\"title\",\"content\":\"body\","
                                                                 + "\"labelIds\":[\" java \",\"java\",\"spring\"]}"))
@@ -248,7 +261,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid("author");
         article.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         mvc.perform(put("/article/one/publish").header("Authorization", authorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
         assertEquals(Article.STATE_PUBLISHED, article.getState());
@@ -266,7 +279,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid(owner);
         article.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
         for (String action : List.of("publish", "unpublish")) {
             mvc.perform(put("/article/one/" + action).header("Authorization", authorization()))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20003));
@@ -279,7 +292,7 @@ class ArticleControllerTest {
         Article draft = new Article();
         draft.setUserid("author");
         draft.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn(Optional.of(draft));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(draft));
         mvc.perform(get("/article/one")).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("资源不存在"));
         mvc.perform(get("/article/one").header("Authorization", authorization()))
@@ -299,7 +312,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid("author");
         article.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         mvc.perform(put("/article/one/submit").header("Authorization", authorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
         assertEquals(Article.STATE_PENDING, article.getState());
@@ -312,7 +325,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid(owner);
         article.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn("missing".equals(owner) ? Optional.empty() : Optional.of(article));
         mvc.perform(put("/article/one/submit").header("Authorization", authorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20003));
         verify(articleDao, never()).save(any());
@@ -323,7 +336,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid("author");
         article.setState(Article.STATE_PENDING);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         for (String action : List.of("approve", "reject")) {
             mvc.perform(put("/article/one/" + action).header("Authorization", authorization()))
                     .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(20003));
@@ -336,7 +349,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid("author");
         article.setState(Article.STATE_PENDING);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         mvc.perform(put("/article/one/approve").header("Authorization", adminAuthorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
         assertEquals(Article.STATE_PUBLISHED, article.getState());
@@ -348,7 +361,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid("author");
         article.setState(Article.STATE_PENDING);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         mvc.perform(put("/article/one/reject").header("Authorization", adminAuthorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
         assertEquals(Article.STATE_DRAFT, article.getState());
@@ -359,7 +372,7 @@ class ArticleControllerTest {
         Article article = new Article();
         article.setUserid("author");
         article.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         mvc.perform(put("/article/one/approve").header("Authorization", adminAuthorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20001))
                 .andExpect(jsonPath("$.message").value("文章状态不允许该操作"));
@@ -371,7 +384,7 @@ class ArticleControllerTest {
         Article draft = new Article();
         draft.setUserid("author");
         draft.setState(Article.STATE_DRAFT);
-        when(articleDao.findById("one")).thenReturn(Optional.of(draft));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(draft));
         mvc.perform(get("/article/one").header("Authorization", adminAuthorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.state").value(Article.STATE_DRAFT));
     }
@@ -382,7 +395,7 @@ class ArticleControllerTest {
         article.setUserid("author");
         article.setState(Article.STATE_PUBLISHED);
         article.setVisits(5);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         when(articleDao.incrementVisits("one")).thenReturn(1);
         mvc.perform(get("/article/one"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.visits").value(6));
@@ -395,7 +408,7 @@ class ArticleControllerTest {
         article.setUserid("author");
         article.setState(Article.STATE_PUBLISHED);
         article.setVisits(5);
-        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
         mvc.perform(get("/article/one").header("Authorization", authorization()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.visits").value(5));
         verify(articleDao, never()).incrementVisits(any());
@@ -441,6 +454,87 @@ class ArticleControllerTest {
                         .content("{\"labelIds\":[\" \" ]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
         verifyNoInteractions(articleDao, articleLabelDao);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "2", "missing"})
+    void rejectsCommentsOnMissingOrUnpublishedArticles(String state) throws Exception {
+        Article article = new Article();
+        article.setId("one");
+        article.setState(state);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(
+                "missing".equals(state) ? Optional.empty() : Optional.of(article));
+        mvc.perform(post("/comment").header("Authorization", authorization())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"articleid\":\"one\",\"content\":\"body\"}"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001));
+        verify(commentDao, never()).saveAndFlush(any());
+        verify(articleDao, never()).incrementComment(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "different-article"})
+    void rejectsMissingAndCrossArticleReplyParents(String parentArticle) throws Exception {
+        Article article = new Article();
+        article.setId("one");
+        article.setState(Article.STATE_PUBLISHED);
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        Comment parent = new Comment();
+        parent.setArticleid(parentArticle);
+        when(commentDao.findByIdForUpdate("parent")).thenReturn(
+                "missing".equals(parentArticle) ? Optional.empty() : Optional.of(parent));
+        mvc.perform(post("/comment").header("Authorization", authorization())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"articleid\":\"one\",\"content\":\"body\",\"parentid\":\"parent\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(20001));
+        verify(commentDao, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void commentReadsRespectArticleVisibilityAndKeepResourceErrorsWrapped() throws Exception {
+        Article article = new Article();
+        article.setId("one");
+        article.setUserid("author");
+        article.setState(Article.STATE_DRAFT);
+        Comment comment = new Comment();
+        comment.set_id("comment");
+        comment.setArticleid("one");
+        when(articleDao.findById("one")).thenReturn(Optional.of(article));
+        when(commentDao.findById("comment")).thenReturn(Optional.of(comment));
+        when(commentDao.findByArticleidOrderByPublishdateDesc("one")).thenReturn(List.of(comment));
+        for (String path : List.of("/comment/comment", "/comment/article/one")) {
+            mvc.perform(get(path)).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value(20001));
+            mvc.perform(get(path).header("Authorization", authorization()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
+            mvc.perform(get(path).header("Authorization", adminAuthorization()))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.flag").value(true));
+        }
+        mvc.perform(get("/comment/article/missing")).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("资源不存在"));
+    }
+
+    @Test
+    void deletingCommentRemovesItsReplyBranchAndUpdatesCount() throws Exception {
+        Article article = new Article();
+        article.setId("one");
+        when(articleDao.findByIdForUpdate("one")).thenReturn(Optional.of(article));
+        Comment root = new Comment();
+        root.set_id("root");
+        root.setArticleid("one");
+        root.setUserid("author");
+        Comment reply = new Comment();
+        reply.set_id("reply");
+        reply.setParentid("root");
+        reply.setArticleid("one");
+        when(commentDao.findArticleId("root")).thenReturn(Optional.of("one"));
+        when(commentDao.findByIdForUpdate("root")).thenReturn(Optional.of(root));
+        when(commentDao.findByArticleIdForUpdate("one")).thenReturn(List.of(root, reply));
+        when(commentDao.deleteComments(List.of("root", "reply"))).thenReturn(2);
+        when(articleDao.decrementComment("one", 2)).thenReturn(1);
+        mvc.perform(delete("/comment/root").header("Authorization", authorization()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(20000));
+        verify(commentThumbupDao).deleteByCommentIds(List.of("root", "reply"));
+        verify(articleDao).decrementComment("one", 2);
     }
 
     private String authorization() {

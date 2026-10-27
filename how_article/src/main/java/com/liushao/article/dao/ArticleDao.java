@@ -1,6 +1,8 @@
 package com.liushao.article.dao;
 
-import com.liushao.article.pojo.Article;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -8,8 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Optional;
+import com.liushao.article.pojo.Article;
 
 /**
  * @author huangshen
@@ -18,6 +19,7 @@ public interface ArticleDao extends JpaRepository<Article, String>, JpaSpecifica
 
     List<Article> findByState(String state);
 
+    // 实体写入和统计增量共用文章行锁，防止整行保存覆盖并发计数。
     @Query(value = "SELECT * FROM tb_article WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<Article> findByIdForUpdate(@Param("id") String id);
 
@@ -29,4 +31,13 @@ public interface ArticleDao extends JpaRepository<Article, String>, JpaSpecifica
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE tb_article SET thumbup = thumbup + 1 WHERE id = :id", nativeQuery = true)
     int incrementThumbup(@Param("id") String id);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE tb_article SET comment = COALESCE(comment, 0) + 1 WHERE id = :id", nativeQuery = true)
+    int incrementComment(@Param("id") String id);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE tb_article SET comment = GREATEST(COALESCE(comment, 0) - :amount, 0) "
+            + "WHERE id = :id", nativeQuery = true)
+    int decrementComment(@Param("id") String id, @Param("amount") int amount);
 }
